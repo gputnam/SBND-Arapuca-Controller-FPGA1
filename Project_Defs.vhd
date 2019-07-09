@@ -78,7 +78,7 @@ constant FreqRegAdHi : AddrPtr  := "00" & X"3A";
 constant FreqRegAdLo : AddrPtr  := "00" & X"3B";
 
 -- heartbeat control register
-
+-- DG: register to control heart-beat period when internal timing is on
 constant HeartBeatFreqRegAdHi : AddrPtr := "00" & X"3C";
 constant HeartBeatFreqRegAdLo : AddrPtr := "00" & X"3D";
 

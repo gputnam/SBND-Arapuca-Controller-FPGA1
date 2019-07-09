@@ -131,6 +131,9 @@ signal GateCounter, TurnOnTime, TurnOffTime : std_logic_vector (8 downto 0);
 signal TrigEn,TstTrigEn,TstTrigCE,Spill_Req,Beam_On,Seq_Busy : std_logic; 
 
 signal TstPlsEn,TstPlsEnReq,SS_FR,IntTrig,ExtTrig,IntTmgEn,TmgCntEn: std_logic;
+-- DG: signal to determine whether to increment Microbunch number periodically
+-- 	 or in response to an external trigger
+signal PeriodicMicroBunch: std_logic;
 
 -- DG: more trigger/timing signals
 signal COUNTRESET, MANTRIG : std_logic;
@@ -319,6 +322,10 @@ signal NimTrigCount: std_logic_vector(15 downto 0);
 signal NimTrigBUF: std_logic_vector (1 downto 0);
 signal NimTrigOLD: std_logic;
 
+-- signals for enabling sending heart-beats
+signal HrtBtTxEnExtTrig: std_logic;
+signal HrtBtTxEnPeriodic: std_logic;
+
 begin
 -- DG: debug stuff
 Debug(1) <= NimTrig;
@@ -381,6 +388,9 @@ HeartBeatTx : FM_Tx
 					 Data => HrtBtData, 
 					 Tx_Out => HrtBtTxOuts);
 HeartBeatFM <= HrtBtTxOuts.FM when ExtTmg = '0' else GPI;
+-- DG: MUX to handle whether HrtBtTxEn is set periodically or by external trigger
+HrtBtTxEn <= HrtBtTxEnPeriodic when PeriodicMicrobunch = '1'
+					else HrtBtTxEnExtTrig;
 
 -- FM transmitter for data requests 
 DReqTx : FM_Tx
@@ -1714,7 +1724,9 @@ main : process(SysClk, CpldRst)
 	Counter1us <= X"00"; Counter1ms <= (others => '0');
 	SuperCycleCount <= (others => '0'); SpillWidthCount <= (others => '0');
 	InterSpillCount <= (others => '0'); 
-	HrtBtTxEn <= '0'; MicrobunchCount <= (others => '0'); 
+	-- No longer reset HrtBt enable -- the two input signals instead are reset
+	-- HrtBtTxEn <= '0'; 
+	MicrobunchCount <= (others => '0'); 
 	DRFreq <= (others => '0'); -- Delivery ring DDS
 	Int_uBunch <= "00"; -- Rising edge of DDS terminal count
 	DRCount <= (others => '0'); -- Delivery ring bunch counter
@@ -1747,9 +1759,14 @@ main : process(SysClk, CpldRst)
 	Trig_Tx_Req <= '0'; Trig_Tx_ReqD <= '0';
 	
 -- DG: reset external timing stuff
+	PeriodicMicrobunch <= '0';
 	NimTrigCount <= (others => '0');
 	COUNTRESET <= '0';
 	MANTRIG <= '0';
+	
+	HrtBtTxEnPeriodic <= '0';
+	HrtBtTxEnExtTrig <= '0';
+	
  elsif rising_edge (SysClk) then 
 
 -- Synchronous edge detectors for read and write strobes
@@ -1867,7 +1884,12 @@ if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr
   then DReqBrstCounter <= DReqBrstCounter - 1;
   else DReqBrstCounter <= DReqBrstCounter;
   end if;
-
+  
+-- DG: set whether to make microbunch number generation periodic
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr
+	then PeriodicMicrobunch <= uCD(10);
+	else PeriodicMicrobunch <= PeriodicMicrobunch;
+end if;
 
 -- DG: turns off internally generated heartbeats
 -- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
@@ -1919,11 +1941,10 @@ elsif (Counter100us = Count100us and SuperCycleCount = SuperCycleLength) or IntT
 else SuperCycleCount <= SuperCycleCount;
 end if;
 
--- 4.72 MHz generator for  Mu2e
+-- X"0C154C98": generates a 4.72 MHz signal in Mu2e w/ a clock of 100MHz
+
 -- setable in general
-if IntTmgEn = '1' then DRFreq <= DRFreq + X"0C154C98";
---+ HeartBeatFreqReg;
---X"0C154C98";
+if IntTmgEn = '1' then DRFreq <= DRFreq + HeartBeatFreqReg;
 else DRFreq <= (others => '0');
 end if;
 
@@ -1939,7 +1960,7 @@ Int_uBunch(1) <= Int_uBunch(0);
 -- DG: turns off internally generated heartbeats
 -- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
 
--- DG: 
+-- DG: TODO: what is the DRCount?
 
 --if IntTmgEn = '1' and 
 --   Int_uBunch = 1 and not((Beam_On = '1' and DRCount = 7) or DRCount = 143)
@@ -1949,26 +1970,26 @@ Int_uBunch(1) <= Int_uBunch(0);
 --else DRCount <= DRCount;
 --end if;
 
--- DG: turns off internal incrementing od Microbunch numbers
+-- DG: turns off internal incrementing of Microbunch numbers
 
 -- Increment the microbunch number
---if IntTmgEn = '1' and 
---	Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
---then MicrobunchCount <= MicrobunchCount + 1;
---elsif IntTmgEn = '0'
---	then MicrobunchCount <= (others => '0');
---else MicrobunchCount <= MicrobunchCount;
---end if;
+-- 
+if IntTmgEn = '1' and Int_uBunch = 1 and PeriodicMicrobunch = '1'
+then MicrobunchCount <= MicrobunchCount + 1;
+elsif IntTmgEn = '0'
+	then MicrobunchCount <= (others => '0');
+else MicrobunchCount <= MicrobunchCount;
+end if;
 
 -- DG: turns off transmission of hearbeat messages on internal increment
 --     of Microbunch number
 
 -- Send a start transmit pulse to the FM transmitter at the beginning of 
 -- each microbunch
---if Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
--- then HrtBtTxEn <= '1'; 
---else HrtBtTxEn <= '0';
---end if;
+if Int_uBunch = 1 and IntTmgEn = '1' and PeriodicMicrobunch = '1'
+  then HrtBtTxEnPeriodic <= '1'; 
+  else HrtBtTxEnPeriodic <= '0';
+end if;
 
 if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = DReqBrstCntAd 
  then DReqBrstCntReg <= uCD;
@@ -2337,9 +2358,9 @@ elsif (NimTrigBUF(1) = '0' and NimTrigOLD = '1') OR MANTRIG = '1'
 then
 	NimTrigCount <= NimTrigCount + '1';
 	if IntTmgEn = '1' then
-		HrtBtTxEn <= '1'; 
+		HrtBtTxEnExtTrig <= '1'; 
 	else
-		HrtBtTxEn <= '0'; 
+		HrtBtTxEnExtTrig <= '0'; 
 	end if;
 	if TstTrigEn = '1' then
 		Trig_Tx_Req <= '1';
@@ -2347,16 +2368,16 @@ then
 		Trig_Tx_Req <= '0';
 	end if;
 	MANTRIG <= '0';
-	MicrobunchCount <= MicrobunchCount + 1;
+	if PeriodicMicrobunch = '0'
+	then MicrobunchCount <= MicrobunchCount + 1;
+	else MicrobunchCount <= MicrobunchCount;
+	end if;
 else
 	MicrobunchCount <= MicrobunchCount;
 	NimTrigCount <= NimTrigCount;
-	HrtBtTxEn <= '0';
+	HrtBtTxEnExtTrig <= '0';
 	Trig_Tx_Req <= Trig_Tx_Req;
-
-
 end if;
-
 
 if Trig_Tx_Ack = '1'
 	then Trig_Tx_Req <= '0';
@@ -2373,7 +2394,7 @@ end process;
 
 with uCA(9 downto 0) select
 
-iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel 
+iCD <= X"0" & "0" & PeriodicMicroBunch & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel 
 		 & '0' & ExtTmg & '0' & FormHold & TmgCntEn & IntTmgEn when CSRRegAddr,
 		   Rx_IsCtrl(1) & InvalidChar(1) & Rx_IsComma(1) & Reframe(1) & TDisB 
 		 & Rx_IsCtrl(0) & InvalidChar(0) & Rx_IsComma(0) & Reframe(0) & TDisA when GTPCSRAddr,
