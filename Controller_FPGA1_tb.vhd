@@ -2310,8 +2310,8 @@ uut: ControllerFPGA_1
 
 -- Cross connect GTP I/O for loopback operation
 -- Rx0 input polarity is inverted
-GTPRx_N(0) <= GTPTx_P(1);
-GTPRx_P(0) <= GTPTx_N(1);
+--GTPRx_N(0) <= GTPTx_P(1);
+--GTPRx_P(0) <= GTPTx_N(1);
 
 GTPRx_N(1) <= GTPTx_N(0);
 GTPRx_P(1) <= GTPTx_P(0);
@@ -2594,6 +2594,21 @@ end loop;
 end if;
 
 end process;
+
+
+-- DG: process to simulate external trigger
+Trigger: process
+begin
+wait for 500 ns;
+NimTrig <= '1';
+wait for 20 ns;
+NimTrig <= '0';
+uCA <= "00" & ExternalTriggerInfoAddress;
+CpldCS <= '0';
+uCRd <= '0';
+wait;
+end process;
+
 
 uCIO : process
 

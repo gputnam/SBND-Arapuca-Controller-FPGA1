@@ -102,6 +102,10 @@ constant SpillStatAddr : AddrPtr  := "00" & X"76";
 
 constant MarkerBitsAd : AddrPtr  := "00" & X"77";
 
+-- DG: register for reading back external trigger information
+-- TODO: document all added registers for the micro-controller to access
+constant ExternalTriggerInfoAddress : AddrPtr := "00" & X"78";
+
 ---------------------- Broadcast addresses ------------------------------
 
 -- Phy transmit broadcast for all three front FPGAs

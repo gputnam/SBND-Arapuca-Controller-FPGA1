@@ -130,7 +130,11 @@ signal GateCounter, TurnOnTime, TurnOffTime : std_logic_vector (8 downto 0);
 
 signal TrigEn,TstTrigEn,TstTrigCE,Spill_Req,Beam_On,Seq_Busy : std_logic; 
 
-signal TstPlsEn,TstPlsEnReq,SS_FR,IntTrig,ExtTrig,IntTmgEn,TmgCntEn : std_logic;
+signal TstPlsEn,TstPlsEnReq,SS_FR,IntTrig,ExtTrig,IntTmgEn,TmgCntEn: std_logic;
+
+-- DG: more trigger/timing signals
+signal COUNTRESET, MANTRIG : std_logic;
+
 signal SpillWidth,InterSpill,InterSpillCount : std_logic_vector (7 downto 0);
 
 -- Signals for generating fake accelerator timing signals
@@ -252,6 +256,8 @@ signal TrigFMDat : std_logic_vector (15 downto 0);
 
 -- Trigger request packet buffer, FIFO status bits
 signal DReqBuff_Out : std_logic_vector (15 downto 0);
+-- DG: signal to manage Data Request Buffer input
+signal DReqBuff_In : std_logic_vector (15 downto 0);
 signal DReqBuff_wr_en,DReqBuff_rd_en,DReqBuff_uCRd,
 		 DReqBuff_Full,TrigTx_Sel,DReqBuff_Emtpy,Trig_Tx_Req,
 		 Trig_Tx_Ack,BmOnTrigReq,Trig_Tx_ReqD,Stat_DReq : std_logic;
@@ -308,7 +314,21 @@ signal RxSeqNoErr : std_logic_vector (1 downto 0);
 
 signal PunchBits : std_logic_vector (3 downto 0);
 
+-- DG: EXTERNAL TRIGGER SIGNALS --
+signal NimTrigCount: std_logic_vector(15 downto 0);
+signal NimTrigBUF: std_logic_vector (1 downto 0);
+signal NimTrigOLD: std_logic;
+
 begin
+-- DG: debug stuff
+Debug(1) <= NimTrig;
+Debug(2) <= NimTrigOLD;
+Debug(3) <= NimTrigBUF(0);
+Debug(4) <= NimTrigBUF(1);
+Debug(5) <= NimTrigCount(0);
+Debug(6) <= NimTrigCount(1);
+Debug(7) <= Trig_Tx_Req;
+Debug(8) <= Trig_Tx_Ack;
 
    BunchClkIn : IDDR2
    generic map(
@@ -376,13 +396,19 @@ TrigFM <= DreqTxOuts.FM when TrigTx_Sel = '1'
 DReqTxEn <= '1' when TrigTx_Sel = '1' and DReqBuff_Emtpy = '0' and DreqTxOuts.Done = '0' 
 					  else '0';
 
+-- DG: TODO: switch to configure DReqBuff source from external trigger/fiber
+--DReqBuff_In <= GTPRxReg(0)   -- TO USE FIBER LINK
+
+
+-- DG: TODO: figure out how to have buffer use different clocks
+
 -- FIFO for buffering broadcast trigger requests, 
 -- crossing clock domains from UsrClk to Sysclk
 DReqBuff : FIFO_DC_1kx16
   PORT MAP (rst => GTPRxRst,
-    wr_clk => UsrClk2(0),
+    wr_clk => SysClk,
 	 rd_clk => SysClk,
-    din => GTPRxReg(0),
+    din => DReqBuff_In,
     wr_en => DReqBuff_wr_en,
     rd_en => DReqBuff_rd_en,
     dout => DReqBuff_Out,
@@ -392,12 +418,14 @@ DReqBuff : FIFO_DC_1kx16
 
 DReqBuff_rd_en <= DreqTxOuts.Done when TrigTx_Sel = '1' else DReqBuff_uCRd;
 
+-- DG: TODO -- where are status requests coming from?
+
 -- FIFO for buffering status requests
 DCSPktBuff : LinkFIFO
   PORT MAP (rst => GTPRxRst,
-	 wr_clk => UsrClk2(0),
+	 wr_clk => SysClk,
     rd_clk => SysClk,
-    din => GTPRxReg(0),
+    din => DReqBuff_In,
     wr_en => DCSTxBuff_wr_en,
     rd_en => DCSTxBuff_rd_en,
     dout => DCSTxBuff_Out,
@@ -615,7 +643,9 @@ begin
 	TxSeqNo(0) <= "000"; TxCRCRst(0) <= '0';
     TxCRCEn(0) <= '0'; RdCRCEn(0) <= '0'; 
 	RxCRCRst(0) <= '0';  RxCRCRstD(0) <= '0';
-	PRBSCntRst(0) <= '0'; DReqBuff_wr_en <= '0'; TrigReqWdCnt <= X"0";
+	PRBSCntRst(0) <= '0'; TrigReqWdCnt <= X"0"; 
+	-- DG: TODO: where does the reset for the Data Request write come from?
+	-- DReqBuff_wr_en <= '0'; --DANIEL
 	DCSTxBuff_wr_en <= '0'; DReq_Count <= (others =>'0');
 	LinkRDDL <= "00"; Packet_Parser <= Idle; Event_Builder <= Idle;
 	RxSeqNoErr(0) <= '0'; Packet_Former <= Idle; FormRst <= '0';
@@ -778,10 +808,12 @@ elsif rising_edge (UsrClk2(0)) then
 	else TrigReqWdCnt <= TrigReqWdCnt;
 	end if;
 
-	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" and TrigReqWdCnt > 0
-	then DReqBuff_wr_en <= '1'; 
-	else DReqBuff_wr_en <= '0'; 
-	end if;
+	-- DG: switch DReq buff driver from fiber to external trigger
+	--     TODO: may have to switch this back later
+	--if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" and TrigReqWdCnt > 0
+	--then DReqBuff_wr_en <= '1'; 
+	--else DReqBuff_wr_en <= '0'; 
+	--end if;
 
 	if TrigTx_Sel = '1' and DReqBuff_Emtpy = '0'
 	then Stat_DReq <= '0';
@@ -795,10 +827,15 @@ elsif rising_edge (UsrClk2(0)) then
 	else LinkFIFOStatReg <= LinkFIFOStatReg;
 	end if;
 
+-- DG: TODO:
+	-- Set timestamp buffer write enable back on????
+	-- Is this buffer avilable for use as a way to generate timestamps
+	-- internally?
+
 -- Store the time stamp subfield from the trigger request packet for later checking
 	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" 
 	and TrigReqWdCnt >= 5 and TrigReqWdCnt <= 7 	
-	then TStmpBuff_wr_en <= '1';
+	then TStmpBuff_wr_en <= '0'; --DANIEL, WAS 1
 	else TStmpBuff_wr_en <= '0';
 	end if;
 
@@ -842,7 +879,7 @@ if Packet_Parser = Check_Seq_No and GTPRxBuff_Out(0)(7 downto 5) /= RxSeqNo(0)
 ---------------------------------------------------------------------------
 Case Event_Builder is
 	when Idle => --Debug(10 downto 7) <= X"0";
-		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpWds >= 3 
+		if LinkFIFOEmpty /= 7 and FormHold = '0' -- DG: TODO: turn this back on if timestamps on? -- and TStmpWds >= 3 
 		 then Event_Builder <= WaitEvent;
 		else Event_Builder <= Idle;
 		end if;
@@ -1133,16 +1170,14 @@ GTP1I_O : process (UsrClk2(1), CpldRst)
 begin
 
  if CpldRst = '0' then 
+	-- DG: moved resets associated with data request buffer onto SysClk
 
 	CommaDL(1) <= "00"; GTPRxReg(1) <= X"0000";
 	UsrWRDL(1) <= "00"; Reframe(1) <= '1'; 
-	TxCharIsK(1) <= "11"; GTPTx(1) <= X"BC3C";
-	TxSeqNo(1) <= "000"; TxCRCRst(1) <= '0';
-   TxCRCEn(1) <= '0'; RdCRCEn(1) <= '0'; 
-	RxCRCRst(1) <= '0'; RxCRCRstD(1) <= '0'; TxCRCDat(1) <= X"0000";
-	GTPRxBuff_wr_en(1) <= '0'; PRBSCntRst(1) <= '0';
-	En_PRBS(1) <= "000"; Trig_Tx_Ack <= '0';
-	IntTrigSeq <= Idle; 
+	RxCRCRst(1) <= '0'; RxCRCRstD(1) <= '0'; 
+	PRBSCntRst(1) <= '0';
+	En_PRBS(1) <= "000"; 
+
 
 elsif rising_edge (UsrClk2(1)) then
 
@@ -1172,7 +1207,25 @@ elsif rising_edge (UsrClk2(1)) then
 
 	UsrWRDL(1)(0) <= not uCWR and not CpldCS;
    UsrWRDL(1)(1) <= UsrWRDL(1)(0);
-	
+end if;
+end process;
+
+-- DG: new process -- handles generation of Data Request from external LEMO-NIM trigger
+Daniel_DATAREQ : process (SysClk, CpldRst)
+begin
+
+ if CpldRst = '0' then 
+
+	TxCharIsK(1) <= "11"; GTPTx(1) <= X"BC3C";
+	TxSeqNo(1) <= "000"; TxCRCRst(1) <= '0';
+   TxCRCEn(1) <= '0'; TxCRCDat(1) <= X"0000";
+	PRBSCntRst(1) <= '0';
+	En_PRBS(1) <= "000"; Trig_Tx_Ack <= '0';
+	IntTrigSeq <= Idle; 
+elsif rising_edge (SysClk) then
+
+
+-- DG: TODO: is Req/Ack necessary?
 -- Request/Acknowledge to cross clock domains
 	Trig_Tx_Ack  <= Trig_Tx_Req;
 
@@ -1192,81 +1245,102 @@ Case IntTrigSeq is
 	when SenduBunch2 => IntTrigSeq <= SendPad1;
 	when SendPad1 => IntTrigSeq <= SendPad2;
 	when SendPad2 => IntTrigSeq <= SendPad3;
-	when SendPad3 => IntTrigSeq <= WaitCRC;
+	when SendPad3 => IntTrigSeq <= WaitCRC; 
 	when WaitCRC => IntTrigSeq <= SendCRC;
 	when SendCRC => IntTrigSeq <= Idle;
-	when others => IntTrigSeq <= Idle;
+	when others => IntTrigSeq <= Idle;  
+	-- DG: TODO: is this necessary?
+	DReqBuff_wr_en <= '0';
 end Case;
-
+DReqBuff_wr_en <= '0';
 -- Use this address to append K28.0 to Dx.y where x is 5 bits of data and
 -- y is the packet sequence number
 	if (UsrWRDL(1) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(1))
 	   or IntTrigSeq = SendTrigHdr  
-	 then if IntTrigSeq = SendTrigHdr 
-				then GTPTx(1) <= X"1C" & TxSeqNo(1) & "00010";
-				else GTPTx(1) <= X"1C" & TxSeqNo(1) & uCD(4 downto 0);
+		--DG TODO: make it more explicit that header is not included in Data Request Packet
+		-- HEADER IS NOT INCLUDED IN DATA REQUEST PACKET
+	then if IntTrigSeq = SendTrigHdr 
+				then DReqBuff_In <= X"1C" & TxSeqNo(1) & "00010";
+				else DReqBuff_In <= X"1C" & TxSeqNo(1) & uCD(4 downto 0);
 			 end if;
 		   TxSeqNo(1) <= TxSeqNo(1) + 1;
 			TxCharIsK(1) <= "10";
 			TxCRCRst(1) <= '1';
 			TxCRCEn(1) <= '0';
 			TxCRCDat(1) <= (others => '0');
+			--DReqBuff_wr_en <= '1';
+
 -- Use this address to send unmodified data
 	elsif (UsrWRDL(1) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(3))
 	   or IntTrigSeq = SendPad0
 	 then if IntTrigSeq = SendPad0
-				then GTPTx(1) <= (others => '0');
+				then DReqBuff_In <= (others => '0');
 					  TxCRCDat(1) <= (others => '0');
-				else GTPTx(1) <= uCD;
+				else DReqBuff_In <= uCD;
 					  TxCRCDat(1) <= uCD;
 			 end if;
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
 	 elsif IntTrigSeq = SendPktType  
-	  then GTPTx(1) <= X"0020";
+	  then DReqBuff_In <= X"0020";
 			TxCRCDat(1) <= X"0020"; 
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
+
 	 elsif IntTrigSeq = SenduBunch0  
-	  then GTPTx(1) <= MicrobunchCount(15 downto 0);
+	  then DReqBuff_In <= MicrobunchCount(15 downto 0);
 	       TxCRCDat(1) <= MicrobunchCount(15 downto 0); 
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
+
 	 elsif IntTrigSeq = SenduBunch1  
-	  then GTPTx(1) <= MicrobunchCount(31 downto 16);
+	  then DReqBuff_In <= MicrobunchCount(31 downto 16);
 	      TxCRCDat(1) <= MicrobunchCount(31 downto 16); 
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
+
 	 elsif IntTrigSeq = SenduBunch2  
-	  then GTPTx(1) <= MicrobunchCount(47 downto 32);
+	  then DReqBuff_In <= MicrobunchCount(47 downto 32);
 	      TxCRCDat(1) <= MicrobunchCount(47 downto 32); 
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
+
 	 elsif IntTrigSeq = SendPad1  
-	  then GTPTx(1) <= (others => '0');
+	  then DReqBuff_In <= (others => '0');
 			 TxCRCDat(1) <= (others => '0');
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
+
 	 elsif IntTrigSeq = SendPad2  
-	  then GTPTx(1) <= (others => '0');
+	  then DReqBuff_In <= (others => '0');
 	  		TxCRCDat(1) <= (others => '0');
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
+
 	 elsif IntTrigSeq = SendPad3  
-	  then GTPTx(1) <= (others => '0');
+	  then DReqBuff_In <= (others => '0');
 			TxCRCDat(1) <= (others => '0');
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '1';
+			DReqBuff_wr_en <= '1';
+
 	 elsif IntTrigSeq = WaitCRC  
-	  then GTPTx(1) <= X"BC3C";
+	  then DReqBuff_In <= X"BC3C";
 			TxCRCDat(1) <= (others => '0');
 			TxCharIsK(1) <= "11";
 			TxCRCRst(1) <= '0';
@@ -1274,12 +1348,14 @@ end Case;
 -- Use this address to send the check sum
 	elsif (UsrWRDL(1) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(5))
 			or IntTrigSeq = SendCRC
-	 then GTPTx(1) <= TxCRC(1);
+	 then DReqBuff_In <= TxCRC(1);
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '0';
+			DReqBuff_wr_en <= '1';
+
 -- Pad is K28.5 K28.1 pair
-	 else GTPTx(1) <= X"BC3C";
+	 else DReqBuff_In <= X"BC3C";
 			TxCharIsK(1) <= "11";
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '0';
@@ -1495,7 +1571,7 @@ EthProc : process(EthClk, CpldRst)
 	ZEthBE <= "11"; EthRDDL <= (others => '0');
 	MarkerBits <= X"00"; Even_Odd <= '0'; Marker <= '0';
 	GaurdCount <= X"0"; GPO <= "00";
-	Debug <= (others => '0');
+	--Debug <= (others => '0');
 
  elsif rising_edge (EthClk) then 
 
@@ -1509,21 +1585,21 @@ EthProc : process(EthClk, CpldRst)
 	else GaurdCount <= GaurdCount;
 	end if;
 	
-	Debug(8 downto 1) <= MarkerBits;
+	--Debug(8 downto 1) <= MarkerBits;
 	if GaurdCount = 0 and Debug(9) = '0' 
 		and not(MarkerBits = X"F0" or MarkerBits = X"C3" or MarkerBits = X"0F" or MarkerBits = X"3C")
-	then Debug(9) <= '1'; GPO(0) <= '1';
+	then --Debug(9) <= '1'; GPO(0) <= '1';
 	elsif Debug(9) = '1' 
 		and (MarkerBits = X"F0" or MarkerBits = X"C3" or MarkerBits = X"0F" or MarkerBits = X"3C")
-	then Debug(9) <= '0'; GPO(0) <= '0';
-	else Debug(9) <= Debug(9); GPO(0) <= GPO(0);
+	then --Debug(9) <= '0'; GPO(0) <= '0';
+	else --Debug(9) <= Debug(9); GPO(0) <= GPO(0);
 	end if;
 	
 	if Debug(9) = '0' and MarkerBits = X"0C" 
-	  then Debug(10) <= '1';  GPO(1) <= '1';
+	  then --Debug(10) <= '1';  GPO(1) <= '1';
 	elsif Debug(9) = '0' and GaurdCount = 0 and MarkerBits = X"3F"
-	  then Debug(10) <= '0'; GPO(1) <= '0';
-	 else Debug(10) <= Debug(10); GPO(1) <= GPO(1);
+	  then --Debug(10) <= '0'; GPO(1) <= '0';
+	 else --Debug(10) <= Debug(10); GPO(1) <= GPO(1);
 	end if;
 	
 	if MarkerBits <= X"C0" then Even_Odd <= '1';
@@ -1669,7 +1745,11 @@ main : process(SysClk, CpldRst)
 
 	DReqBrstCntReg <= X"0001"; DReqBrstCounter <= (others => '0');
 	Trig_Tx_Req <= '0'; Trig_Tx_ReqD <= '0';
-	 
+	
+-- DG: reset external timing stuff
+	NimTrigCount <= (others => '0');
+	COUNTRESET <= '0';
+	MANTRIG <= '0';
  elsif rising_edge (SysClk) then 
 
 -- Synchronous edge detectors for read and write strobes
@@ -1724,7 +1804,10 @@ if IntTmgEn = '0'
 -- If the finite length is enabled, stop after the count has expired
  elsif IntTmgEn = '1' 
    and ((WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr and uCD(0) = '0')
-    or  (HrtBtBrstCounter = 1 and Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)))
+	-- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
+    --or  (HrtBtBrstCounter = 1 and Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143))
+	 )
+	 
   then IntTmgEn <= '0';
  else IntTmgEn <= IntTmgEn;
  end if;
@@ -1758,7 +1841,8 @@ if TstTrigEn = '0' and WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) =
 -- If the finite length is enabled, stop after the count has expired
  elsif TstTrigEn = '1' and ((WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr 
 	and uCD(8) = '0')
-  or (TstTrigCE = '1' and DReqBrstCounter = 1 and Trig_Tx_Req = '1' and Trig_Tx_ReqD = '0'))
+  or (TstTrigCE = '1' and DReqBrstCounter = 1 and Trig_Tx_Req = '1' and Trig_Tx_ReqD = '0')
+)
   then TstTrigEn <= '0';
  else TstTrigEn <= TstTrigEn;
  end if;
@@ -1784,12 +1868,16 @@ if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr
   else DReqBrstCounter <= DReqBrstCounter;
   end if;
 
-if TstTrigEn = '1' and IntTmgEn = '1' and Int_uBunch = 1 
-	and ((Beam_On = '1' and DRCount = 7 and BmOnTrigReq = '1') or DRCount = 143)
-	then Trig_Tx_Req <= '1';
-elsif Trig_Tx_Ack = '1'
-	then Trig_Tx_Req <= '0';
-end if;
+
+-- DG: turns off internally generated heartbeats
+-- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
+--if TstTrigEn = '1' and IntTmgEn = '1' and Int_uBunch = 1 
+--	and ((Beam_On = '1' and DRCount = 7 and BmOnTrigReq = '1') or DRCount = 143)
+--	then Trig_Tx_Req <= '1';
+--elsif Trig_Tx_Ack = '1'
+--	then Trig_Tx_Req <= '0';
+--end if;
+
 Trig_Tx_ReqD <= Trig_Tx_Req;
 
 if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = IDregAddr 
@@ -1847,29 +1935,40 @@ Int_uBunch(1) <= Int_uBunch(0);
 
 -- For now define the on spill to be 8 4.7MHz ticks and the off spill 144 ticks
 -- "DR" for delivery ring 
-if IntTmgEn = '1' and 
-   Int_uBunch = 1 and not((Beam_On = '1' and DRCount = 7) or DRCount = 143)
-then DRCount <= DRCount + 1;
-elsif Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
-then DRCount <= (others => '0');
-else DRCount <= DRCount;
-end if;
+
+-- DG: turns off internally generated heartbeats
+-- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
+
+-- DG: 
+
+--if IntTmgEn = '1' and 
+--   Int_uBunch = 1 and not((Beam_On = '1' and DRCount = 7) or DRCount = 143)
+--then DRCount <= DRCount + 1;
+--elsif Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
+--then DRCount <= (others => '0');
+--else DRCount <= DRCount;
+--end if;
+
+-- DG: turns off internal incrementing od Microbunch numbers
 
 -- Increment the microbunch number
-if IntTmgEn = '1' and 
-	Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
-then MicrobunchCount <= MicrobunchCount + 1;
-elsif IntTmgEn = '0'
-	then MicrobunchCount <= (others => '0');
-else MicrobunchCount <= MicrobunchCount;
-end if;
+--if IntTmgEn = '1' and 
+--	Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
+--then MicrobunchCount <= MicrobunchCount + 1;
+--elsif IntTmgEn = '0'
+--	then MicrobunchCount <= (others => '0');
+--else MicrobunchCount <= MicrobunchCount;
+--end if;
+
+-- DG: turns off transmission of hearbeat messages on internal increment
+--     of Microbunch number
 
 -- Send a start transmit pulse to the FM transmitter at the beginning of 
 -- each microbunch
-if Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
- then HrtBtTxEn <= '1'; 
-else HrtBtTxEn <= '0';
-end if;
+--if Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
+-- then HrtBtTxEn <= '1'; 
+--else HrtBtTxEn <= '0';
+--end if;
 
 if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = DReqBrstCntAd 
  then DReqBrstCntReg <= uCD;
@@ -2216,6 +2315,56 @@ if WrDL = 1 and uCA(9 downto 0) = TrigCtrlAddr and uCD(0) = '1'
  else  IntTrig <= IntTrig;
 end if;
 
+
+-- DG: Nim-Trig logic
+-- DG: todo -- make registers for reading/writing CSRRegAddr consistent
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr  and uCD(10)='1'
+then COUNTRESET <='1';
+else COUNTRESET <= COUNTRESET;
+end if;
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr  and uCD(11)='1'
+then MANTRIG <='1';
+else MANTRIG <= MANTRIG;
+end if;
+-- DG: TODO: add configuration if trigger signal is synchronous w.r.t. SysClk
+NimTrigBUF(0) <= NimTrig;
+NimTrigBUF(1) <= NimTrigBUF(0);
+if COUNTRESET = '1'
+then 	NimTrigCount <= (others => '0');
+		MicrobunchCount <= (others => '0');
+		COUNTRESET <= '0';
+elsif (NimTrigBUF(1) = '0' and NimTrigOLD = '1') OR MANTRIG = '1'
+then
+	NimTrigCount <= NimTrigCount + '1';
+	if IntTmgEn = '1' then
+		HrtBtTxEn <= '1'; 
+	else
+		HrtBtTxEn <= '0'; 
+	end if;
+	if TstTrigEn = '1' then
+		Trig_Tx_Req <= '1';
+	else
+		Trig_Tx_Req <= '0';
+	end if;
+	MANTRIG <= '0';
+	MicrobunchCount <= MicrobunchCount + 1;
+else
+	MicrobunchCount <= MicrobunchCount;
+	NimTrigCount <= NimTrigCount;
+	HrtBtTxEn <= '0';
+	Trig_Tx_Req <= Trig_Tx_Req;
+
+
+end if;
+
+
+if Trig_Tx_Ack = '1'
+	then Trig_Tx_Req <= '0';
+end if;
+
+
+
+NimTrigOLD <= NimTrigBUF(1);
 end if; --rising edge
 
 end process;
@@ -2273,6 +2422,8 @@ iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel
 		 HeartBeatFreqReg(31 downto 16) when HeartBeatFreqRegAdHi,
 		 HeartBeatFreqReg(15 downto 0)  when HeartBeatFreqRegAdLo,
 		 X"00" & MarkerBits when MarkerBitsAd,
+		 -- DG: address to querry number of triggers
+		 COUNTRESET & NimTrigCount(14 downto 0) when ExternalTriggerInfoAddress,
 		 X"0000" when others;
 
 -- Select between the Orange Tree port and the rest of the registers
