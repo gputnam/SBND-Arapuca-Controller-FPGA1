@@ -2269,6 +2269,8 @@ signal Clk53Mhz,Marker,Even_Odd,MarkerReq,Clk160Mhz : std_logic;
 signal BunchBits : std_logic_vector(3 downto 0); 
 signal BunchCount : std_logic_vector(2 downto 0); 
 
+-- signal PeriodicMicrobunch, IntTmgEn: std_logic;
+
 begin
 
 -- Instantiate the Unit Under Test (UUT)
@@ -2297,7 +2299,9 @@ uut: ControllerFPGA_1
 	ZEthWE => ZEthWE,ZEthClk => ZEthClk,
 	ZEthBE => ZEthBE,	ZEthEOF => ZEthEOF,
 	ZEthLen => ZEthLen, GPO => GPO,
-	GPI => GPI,NimTrig => NimTrig,Debug => Debug);
+	GPI => GPI,NimTrig => NimTrig,
+	-- PeriodicMicrobunch => PeriodicMicrobunch, IntTmgEn => IntTmgEn,
+	Debug => Debug);
 
 --TxCRCGEn : crc 
 -- port map( data_in => uCD,
@@ -2596,16 +2600,15 @@ end if;
 end process;
 
 
--- DG: process to simulate external trigger
+-- DG: process to manage microbunch number generation
 Trigger: process
 begin
-wait for 500 ns;
-NimTrig <= '1';
-wait for 20 ns;
 NimTrig <= '0';
-uCA <= "00" & ExternalTriggerInfoAddress;
-CpldCS <= '0';
-uCRd <= '0';
+wait for 4 us;
+-- send a trigger
+NimTrig <= '1';
+wait for 30 ns;
+NimTrig <= '0';
 wait;
 end process;
 
@@ -2689,7 +2692,9 @@ uCIO : process
 		  wait for 5 ns;
 		  CpldCS <= '0';
 		  wait for 5 ns;
-		  uCD <= X"0040";
+--		  uCD <= X"0040";
+			-- turns on IntTmgEn
+		  uCD <= X"0041";
 --		  uCD <= X"0303";
 		  uCWr <= '0';
 		  wait for 15 ns;
@@ -2699,7 +2704,37 @@ uCIO : process
 		  uCA <= (Others => 'Z');
 		  uCD <= (others => 'Z');
 		  wait for 10 ns;
-
+		  
+	wait for 200 ns;
+		  uCA <= "00" & ExternalTriggerControlAddress;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0004";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		  
+	-- turn external trigger generation back on
+	wait for 500 ns;
+		  uCA <= "00" & ExternalTriggerControlAddress;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0000";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
 --
 --	wait for 1 us;	
 
