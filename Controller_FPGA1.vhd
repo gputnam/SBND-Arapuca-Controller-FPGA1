@@ -333,9 +333,10 @@ Debug(2) <= NimTrigOLD;
 Debug(3) <= NimTrigBUF(0);
 Debug(4) <= NimTrigBUF(1);
 Debug(5) <= NimTrigCount(0);
-Debug(6) <= NimTrigCount(1);
-Debug(7) <= Trig_Tx_Req;
-Debug(8) <= Trig_Tx_Ack;
+-- Debug(6) <= NimTrigCount(1);
+Debug(6) <= Trig_Tx_Req;
+Debug(7) <= Trig_Tx_Ack;
+Debug(8) <= HrtBtTxEn;
 
    BunchClkIn : IDDR2
    generic map(
