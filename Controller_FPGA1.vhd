@@ -1885,12 +1885,6 @@ if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr
   then DReqBrstCounter <= DReqBrstCounter - 1;
   else DReqBrstCounter <= DReqBrstCounter;
   end if;
-  
--- DG: set whether to make microbunch number generation periodic
-if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr
-	then PeriodicMicrobunch <= uCD(10);
-	else PeriodicMicrobunch <= PeriodicMicrobunch;
-end if;
 
 -- DG: turns off internally generated heartbeats
 -- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
@@ -1971,16 +1965,7 @@ Int_uBunch(1) <= Int_uBunch(0);
 --else DRCount <= DRCount;
 --end if;
 
--- DG: turns off internal incrementing of Microbunch numbers
 
--- Increment the microbunch number
--- 
-if IntTmgEn = '1' and Int_uBunch = 1 and PeriodicMicrobunch = '1'
-then MicrobunchCount <= MicrobunchCount + 1;
-elsif IntTmgEn = '0'
-	then MicrobunchCount <= (others => '0');
-else MicrobunchCount <= MicrobunchCount;
-end if;
 
 -- DG: turns off transmission of hearbeat messages on internal increment
 --     of Microbunch number
@@ -2339,22 +2324,30 @@ end if;
 
 
 -- DG: Nim-Trig logic
--- DG: todo -- make registers for reading/writing CSRRegAddr consistent
-if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr  and uCD(10)='1'
-then COUNTRESET <='1';
-else COUNTRESET <= COUNTRESET;
+-- Write to ExternalTriggerControl D0 to reset trigger count
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress and uCD(0)='1'
+	then COUNTRESET <='1';
+	else COUNTRESET <= '0';
 end if;
-if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr  and uCD(11)='1'
-then MANTRIG <='1';
-else MANTRIG <= MANTRIG;
+-- Write to ExternalTriggerControl D1 to manually trigger
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress  and uCD(1)='1'
+	then MANTRIG <='1';
+	else MANTRIG <= '0';
 end if;
+-- DG: D2 to set whether to make microbunch number generation periodic
+-- ignored if D0 or D1 are set
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress
+	and uCD(1 downto 0) = "00"
+	then PeriodicMicrobunch <= uCD(2);
+	else PeriodicMicrobunch <= PeriodicMicrobunch;
+end if;
+
 -- DG: TODO: add configuration if trigger signal is synchronous w.r.t. SysClk
 NimTrigBUF(0) <= NimTrig;
 NimTrigBUF(1) <= NimTrigBUF(0);
 if COUNTRESET = '1'
-then 	NimTrigCount <= (others => '0');
-		MicrobunchCount <= (others => '0');
-		COUNTRESET <= '0';
+then 	
+	NimTrigCount <= (others => '0');
 elsif (NimTrigBUF(1) = '0' and NimTrigOLD = '1') OR MANTRIG = '1'
 then
 	NimTrigCount <= NimTrigCount + '1';
@@ -2368,13 +2361,11 @@ then
 	else
 		Trig_Tx_Req <= '0';
 	end if;
-	MANTRIG <= '0';
 	if PeriodicMicrobunch = '0'
 	then MicrobunchCount <= MicrobunchCount + 1;
 	else MicrobunchCount <= MicrobunchCount;
 	end if;
 else
-	MicrobunchCount <= MicrobunchCount;
 	NimTrigCount <= NimTrigCount;
 	HrtBtTxEnExtTrig <= '0';
 	Trig_Tx_Req <= Trig_Tx_Req;
@@ -2384,7 +2375,22 @@ if Trig_Tx_Ack = '1'
 	then Trig_Tx_Req <= '0';
 end if;
 
-
+-- Increment the microbunch number
+-- 
+if 
+	-- whether controller should set microbunch
+	IntTmgEn = '1' and CountReset = '0' and 
+	-- if setting microbunch periodically
+	((PeriodicMicrobunch = '1' and Int_uBunch = 1)
+	-- if setting microbunch from external trigger
+	or (PeriodicMicrobunch = '0' and ((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1' )))
+		then MicrobunchCount <= MicrobunchCount + 1;
+elsif CountReset = '1' or IntTmgEn = '0'
+then 
+		MicrobunchCount <= (others => '0');
+else
+		MicrobunchCount <= MicrobunchCount;
+end if;
 
 NimTrigOLD <= NimTrigBUF(1);
 end if; --rising edge
@@ -2395,7 +2401,7 @@ end process;
 
 with uCA(9 downto 0) select
 
-iCD <= X"0" & "0" & PeriodicMicroBunch & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel 
+iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel 
 		 & '0' & ExtTmg & '0' & FormHold & TmgCntEn & IntTmgEn when CSRRegAddr,
 		   Rx_IsCtrl(1) & InvalidChar(1) & Rx_IsComma(1) & Reframe(1) & TDisB 
 		 & Rx_IsCtrl(0) & InvalidChar(0) & Rx_IsComma(0) & Reframe(0) & TDisA when GTPCSRAddr,
@@ -2446,6 +2452,7 @@ iCD <= X"0" & "0" & PeriodicMicroBunch & TstTrigCE & TstTrigEn & '0' & TrigTx_Se
 		 X"00" & MarkerBits when MarkerBitsAd,
 		 -- DG: address to querry number of triggers
 		 COUNTRESET & NimTrigCount(14 downto 0) when ExternalTriggerInfoAddress,
+		 X"000" & "0" & PeriodicMicrobunch & "00" when ExternalTriggerControlAddress,
 		 X"0000" when others;
 
 -- Select between the Orange Tree port and the rest of the registers

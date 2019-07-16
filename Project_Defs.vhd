@@ -106,6 +106,9 @@ constant MarkerBitsAd : AddrPtr  := "00" & X"77";
 -- TODO: document all added registers for the micro-controller to access
 constant ExternalTriggerInfoAddress : AddrPtr := "00" & X"78";
 
+-- DG: register for controlling external triggering stuff
+constant ExternalTriggerControlAddress : AddrPtr := "00" & X"79";
+
 ---------------------- Broadcast addresses ------------------------------
 
 -- Phy transmit broadcast for all three front FPGAs
