@@ -2361,10 +2361,6 @@ then
 	else
 		Trig_Tx_Req <= '0';
 	end if;
-	if PeriodicMicrobunch = '0'
-	then MicrobunchCount <= MicrobunchCount + 1;
-	else MicrobunchCount <= MicrobunchCount;
-	end if;
 else
 	NimTrigCount <= NimTrigCount;
 	HrtBtTxEnExtTrig <= '0';
