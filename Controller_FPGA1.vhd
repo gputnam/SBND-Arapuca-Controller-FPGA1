@@ -138,6 +138,11 @@ signal PeriodicMicroBunch: std_logic;
 -- DG: more trigger/timing signals
 signal COUNTRESET, MANTRIG : std_logic;
 
+-- DG: External trigger inhibit
+signal ExtTriggerInhibit : std_logic_vector (47 downto 0);
+signal ExtTriggerInhibitCount : std_logic_vector (47 downto 0);
+
+
 signal SpillWidth,InterSpill,InterSpillCount : std_logic_vector (7 downto 0);
 
 -- Signals for generating fake accelerator timing signals
@@ -1725,9 +1730,12 @@ main : process(SysClk, CpldRst)
 	Counter1us <= X"00"; Counter1ms <= (others => '0');
 	SuperCycleCount <= (others => '0'); SpillWidthCount <= (others => '0');
 	InterSpillCount <= (others => '0'); 
-	-- No longer reset HrtBt enable -- the two input signals instead are reset
+	-- DG: No longer reset HrtBt enable -- the two input signals instead are reset
 	-- HrtBtTxEn <= '0'; 
 	MicrobunchCount <= (others => '0'); 
+	-- DG: reset External Trigger Inhibit
+	ExtTriggerInhibit <= (others => '0');
+	ExtTriggerInhibitCount <= (others => '0');
 	DRFreq <= (others => '0'); -- Delivery ring DDS
 	Int_uBunch <= "00"; -- Rising edge of DDS terminal count
 	DRCount <= (others => '0'); -- Delivery ring bunch counter
@@ -2345,10 +2353,11 @@ end if;
 -- DG: TODO: add configuration if trigger signal is synchronous w.r.t. SysClk
 NimTrigBUF(0) <= NimTrig;
 NimTrigBUF(1) <= NimTrigBUF(0);
-if COUNTRESET = '1'
-then 	
-	NimTrigCount <= (others => '0');
-elsif (NimTrigBUF(1) = '0' and NimTrigOLD = '1') OR MANTRIG = '1'
+
+-- Recognizing External NIM Trigger
+if ExtTriggerInhibitCount = 0 and
+	COUNTRESET = '0' and
+	((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1')
 then
 	NimTrigCount <= NimTrigCount + '1';
 	if IntTmgEn = '1' then
@@ -2362,6 +2371,10 @@ then
 		Trig_Tx_Req <= '0';
 	end if;
 else
+	if COUNTRESET = '1'
+		then NimTrigCount <= (others => '0');
+		else NimTrigCount <= NimTrigCount;
+	end if;
 	NimTrigCount <= NimTrigCount;
 	HrtBtTxEnExtTrig <= '0';
 	Trig_Tx_Req <= Trig_Tx_Req;
@@ -2369,6 +2382,34 @@ end if;
 
 if Trig_Tx_Ack = '1'
 	then Trig_Tx_Req <= '0';
+end if;
+
+
+-- external trigger inhibit setting
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitLoAddr
+then 
+	ExtTriggerInhibit(15 downto 0) <= uCD(15 downto 0);
+	ExtTriggerInhibitCount(15 downto 0) <= uCD(15 downto 0);
+elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitMdAddr
+then 
+	ExtTriggerInhibit(31 downto 16) <= uCD(15 downto 0);
+	ExtTriggerInhibitCount(31 downto 16) <= uCD(15 downto 0);
+elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitHiAddr
+	then 
+	ExtTriggerInhibit(47 downto 32) <= uCD(15 downto 0);
+	ExtTriggerInhibitCount(47 downto 32) <= uCD(15 downto 0);
+-- if not being set but the value is not zero, decrement it
+elsif ExtTriggerInhibitCount /= 0
+	then 
+	ExtTriggerInhibitCount <= ExtTriggerInhibitCount - 1;
+	ExtTriggerInhibit <= ExtTriggerInhibit;
+-- if we see a trigger, reset the inhibit
+elsif NimTrigBUF(1) = '0' and NimTrigOLD = '1'
+	then 
+	ExtTriggerInhibitCount <= ExtTriggerInhibit;
+else
+	ExtTriggerInhibitCount <= ExtTriggerInhibitCount;
+	ExtTriggerInhibit <= ExtTriggerInhibit;
 end if;
 
 -- Increment the microbunch number
@@ -2379,7 +2420,7 @@ if
 	-- if setting microbunch periodically
 	((PeriodicMicrobunch = '1' and Int_uBunch = 1)
 	-- if setting microbunch from external trigger
-	or (PeriodicMicrobunch = '0' and ((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1' )))
+	or (PeriodicMicrobunch = '0' and ExtTriggerInhibitCount = 0 and ((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1' )))
 		then MicrobunchCount <= MicrobunchCount + 1;
 elsif CountReset = '1' or IntTmgEn = '0'
 then 

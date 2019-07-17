@@ -109,6 +109,10 @@ constant ExternalTriggerInfoAddress : AddrPtr := "00" & X"78";
 -- DG: register for controlling external triggering stuff
 constant ExternalTriggerControlAddress : AddrPtr := "00" & X"79";
 
+constant ExternalTriggerInhibitLoAddr : AddrPtr := "00" & X"80";
+constant ExternalTriggerInhibitMdAddr : AddrPtr := "00" & X"81";
+constant ExternalTriggerInhibitHiAddr : AddrPtr := "00" & X"82";
+
 ---------------------- Broadcast addresses ------------------------------
 
 -- Phy transmit broadcast for all three front FPGAs
