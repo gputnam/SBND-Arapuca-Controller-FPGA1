@@ -2604,12 +2604,12 @@ end process;
 Trigger: process
 begin
 NimTrig <= '0';
-wait for 4 us;
+wait for 300 ns;
 -- send a trigger
 NimTrig <= '1';
 wait for 30 ns;
 NimTrig <= '0';
-wait;
+-- wait for 300 ns;
 end process;
 
 
@@ -2727,6 +2727,21 @@ uCIO : process
 		  CpldCS <= '0';
 		  wait for 5 ns;
 		  uCD <= X"0000";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+	-- start inhibit triggers
+	wait for 100 ns;
+		uCA <= "00" & ExternalTriggerInhibitLoAddr;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"003C";
 		  uCWr <= '0';
 		  wait for 15 ns;
 		  uCWr <= '1';
