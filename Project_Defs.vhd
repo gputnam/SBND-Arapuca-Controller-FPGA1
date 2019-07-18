@@ -109,6 +109,11 @@ constant ExternalTriggerInfoAddress : AddrPtr := "00" & X"78";
 -- DG: register for controlling external triggering stuff
 constant ExternalTriggerControlAddress : AddrPtr := "00" & X"79";
 
+-- DG: register for controlling microbunch period
+constant PeriodicMicrobunchPeriodAddrHi : AddrPtr := "00" & X"7A";
+constant PeriodicMicrobunchPeriodAddrLo : AddrPtr := "00" & X"7B";
+
+
 ---------------------- Broadcast addresses ------------------------------
 
 -- Phy transmit broadcast for all three front FPGAs
