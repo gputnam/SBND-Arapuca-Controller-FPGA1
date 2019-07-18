@@ -2719,6 +2719,20 @@ uCIO : process
 		  uCA <= (Others => 'Z');
 		  uCD <= (others => 'Z');
 		  wait for 10 ns;	
+	wait for 50 ns;
+		  uCA <= "00" & PeriodicMicrobunchPeriodAddrLo;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"000F";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
 		  
 	-- turn external trigger generation back on
 	wait for 500 ns;
@@ -2750,6 +2764,53 @@ uCIO : process
 		  uCA <= (Others => 'Z');
 		  uCD <= (others => 'Z');
 		  wait for 10 ns;	
+		  
+	wait for 100 ns;
+			uCA <= "00" & PLLHiAddr;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0000";
+		  uCWr <= '0';
+		  wait for 25 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		  
+	wait for 50 ns;
+		  		uCA <= "00" & PLLLoAddr;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0008";
+		  uCWr <= '0';
+		  wait for 25 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		  
+	wait for 50 ns;
+
+		  		uCA <= "00" & PLLLoAddr;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0051";
+		  uCWr <= '0';
+		  wait for 25 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		
 --
 --	wait for 1 us;	
 
