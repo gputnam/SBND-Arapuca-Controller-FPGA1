@@ -329,7 +329,6 @@ signal HrtBtTxEnPeriodic: std_logic;
 -- signals for periodic generation of Microbunch counts
 signal PeriodicMicrobunchCount: std_logic_vector(31 downto 0);
 signal PeriodicMicrobunchPeriod: std_logic_vector(31 downto 0);
-signal PeriodicMicrobunchInc : std_logic;
 
 begin
 -- DG: debug stuff
@@ -1733,6 +1732,8 @@ main : process(SysClk, CpldRst)
 	-- No longer reset HrtBt enable -- the two input signals instead are reset
 	-- HrtBtTxEn <= '0'; 
 	MicrobunchCount <= (others => '0'); 
+	PeriodicMicrobunchCount <= (others => '0');
+	PeriodicMicrobunchPeriod <= (others => '0');
 	DRFreq <= (others => '0'); -- Delivery ring DDS
 	Int_uBunch <= "00"; -- Rising edge of DDS terminal count
 	DRCount <= (others => '0'); -- Delivery ring bunch counter
@@ -1982,19 +1983,18 @@ if PeriodicMicrobunch = '1'
 then
 	if PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod /= PeriodicMicrobunchCount
 	then PeriodicMicrobunchCount <= PeriodicMicrobunchCount + 1;
-	else PeriodicMicrobunchCount <= (others => 0);
+	else PeriodicMicrobunchCount <= (others => '0');
 	end if;
-else PeriodicMicrobunchCount <= (others => 0);
+else PeriodicMicrobunchCount <= (others => '0');
 end if;
-
-PeriodicMicrobunchInc <= PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod = PeriodicMicrobunchCount;
 
 -- DG: turns off transmission of hearbeat messages on internal increment
 --     of Microbunch number
 
 -- Send a start transmit pulse to the FM transmitter at the beginning of 
 -- each microbunch
-if PeriodicMicrobunchInc = '1' and IntTmgEn = '1' and PeriodicMicrobunch = '1'
+if PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod = PeriodicMicrobunchCount
+	and IntTmgEn = '1' and PeriodicMicrobunch = '1'
   then HrtBtTxEnPeriodic <= '1'; 
   else HrtBtTxEnPeriodic <= '0';
 end if;
@@ -2399,7 +2399,7 @@ if
 	-- whether controller should set microbunch
 	IntTmgEn = '1' and CountReset = '0' and 
 	-- if setting microbunch periodically
-	((PeriodicMicrobunch = '1' and PeriodicMicrobunchInc = '1')
+	((PeriodicMicrobunch = '1' and PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod = PeriodicMicrobunchCount)
 	-- if setting microbunch from external trigger
 	or (PeriodicMicrobunch = '0' and ((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1' )))
 		then MicrobunchCount <= MicrobunchCount + 1;
