@@ -113,9 +113,9 @@ constant ExternalTriggerControlAddress : AddrPtr := "00" & X"79";
 constant PeriodicMicrobunchPeriodAddrHi : AddrPtr := "00" & X"7A";
 constant PeriodicMicrobunchPeriodAddrLo : AddrPtr := "00" & X"7B";
 
-constant ExternalTriggerInhibitLoAddr : AddrPtr := "00" & X"80";
+constant ExternalTriggerInhibitHiAddr : AddrPtr := "00" & X"80";
 constant ExternalTriggerInhibitMdAddr : AddrPtr := "00" & X"81";
-constant ExternalTriggerInhibitHiAddr : AddrPtr := "00" & X"82";
+constant ExternalTriggerInhibitLoAddr : AddrPtr := "00" & X"82";
 
 
 ---------------------- Broadcast addresses ------------------------------
