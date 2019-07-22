@@ -2408,15 +2408,15 @@ end if;
 
 
 -- external trigger inhibit setting
-if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitLoAddr
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrLo
 then 
 	ExtTriggerInhibit(15 downto 0) <= uCD(15 downto 0);
 	ExtTriggerInhibitCount(15 downto 0) <= uCD(15 downto 0);
-elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitMdAddr
+elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrMd
 then 
 	ExtTriggerInhibit(31 downto 16) <= uCD(15 downto 0);
 	ExtTriggerInhibitCount(31 downto 16) <= uCD(15 downto 0);
-elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitHiAddr
+elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrHi
 	then 
 	ExtTriggerInhibit(47 downto 32) <= uCD(15 downto 0);
 	ExtTriggerInhibitCount(47 downto 32) <= uCD(15 downto 0);
@@ -2512,6 +2512,11 @@ iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel
 		 -- DG: address to querry number of triggers
 		 COUNTRESET & NimTrigCount(14 downto 0) when ExternalTriggerInfoAddress,
 		 X"000" & "0" & PeriodicMicrobunch & "00" when ExternalTriggerControlAddress,
+		 PeriodicMicrobunchPeriod(31 downto 16) when PeriodicMicrobunchPeriodAddrHi,
+		 PeriodicMicrobunchPeriod(15 downto 0) when PeriodicMicrobunchPeriodAddrLo,
+		 ExtTriggerInhibit(47 downto 32) when ExternalTriggerInhibitAddrHi,
+		 ExtTriggerInhibit(31 downto 16) when ExternalTriggerInhibitAddrMd,
+		 ExtTriggerInhibit(15 downto 0) when ExternalTriggerInhibitAddrLo,
 		 X"0000" when others;
 
 -- Select between the Orange Tree port and the rest of the registers

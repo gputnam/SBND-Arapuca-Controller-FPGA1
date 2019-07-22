@@ -2751,7 +2751,7 @@ uCIO : process
 		  wait for 10 ns;	
 	-- start inhibit triggers
 	wait for 100 ns;
-		uCA <= "00" & ExternalTriggerInhibitLoAddr;
+		uCA <= "00" & ExternalTriggerInhibitAddrLo;
 		  wait for 5 ns;
 		  CpldCS <= '0';
 		  wait for 5 ns;
