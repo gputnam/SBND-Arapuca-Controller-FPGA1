@@ -2693,8 +2693,8 @@ uCIO : process
 		  CpldCS <= '0';
 		  wait for 5 ns;
 --		  uCD <= X"0040";
-			-- turns on IntTmgEn
-		  uCD <= X"0041";
+			-- turns on IntTmgEn and TstTrigEn
+		  uCD <= X"0141";
 --		  uCD <= X"0303";
 		  uCWr <= '0';
 		  wait for 15 ns;
