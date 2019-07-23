@@ -465,4 +465,20 @@ component FM_Rx is
 	      Rx_Out : buffer RxOutRec);
 end component;
 
+-- DG: Fifo for communicating between external trigger and packet maker
+	COMPONENT ExtTrigToFiber
+	PORT(
+		rst : IN std_logic;
+		wr_clk : IN std_logic;
+		rd_clk : IN std_logic;
+		din : IN std_logic_vector(47 downto 0);
+		wr_en : IN std_logic;
+		rd_en : IN std_logic;          
+		dout : OUT std_logic_vector(47 downto 0);
+		full : OUT std_logic;
+		empty : OUT std_logic;
+		rd_data_count : OUT std_logic_vector(8 downto 0)
+		);
+	END COMPONENT;
+
 end Project_Defs;

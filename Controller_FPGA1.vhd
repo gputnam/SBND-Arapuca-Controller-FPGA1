@@ -279,9 +279,14 @@ signal TrigReqWdCnt,DCSReqWdCnt : std_logic_vector (3 downto 0);
 signal TrgPktRdCnt : std_logic_vector (10 downto 0);
 
 -- Time stamp FIFO
-signal TStmpBuff_Out : std_logic_vector (15 downto 0); 
+signal TStmpBuff_Out : std_logic_vector (47 downto 0); -- DG: change from 16 bits to 48
 signal TStmpBuff_wr_en,TStmpBuff_rd_en,TStmpBuff_Full,TStmpBuff_Emtpy : std_logic;
 signal TStmpWds : std_logic_vector (8 downto 0); 
+
+-- DG: External Trigger TimeStamp FIFO:
+signal ExtTrigTStampBuff_Out : std_logic_vector(47 downto 0);
+signal ExtTrigTStampBuff_wr_en, ExtTrigTStampBuff_rd_en, ExtTrigTStampBuff_Full, ExtTrigTStampBuff_Empty : std_logic;
+signal ExtTrigTStampBuffWds : std_logic_vector(8 downto 0);
 
 -- DCS request FIFO
 signal DCSTxBuff_wr_en,DCSTxBuff_rd_en,DCSTxBuff_Full,DCSTxBuff_Emtpy : std_logic;
@@ -334,6 +339,12 @@ signal HrtBtTxEnPeriodic: std_logic;
 -- signals for periodic generation of Microbunch counts
 signal PeriodicMicrobunchCount: std_logic_vector(31 downto 0);
 signal PeriodicMicrobunchPeriod: std_logic_vector(31 downto 0);
+
+-- (more) DG: signals for generation of trigger time stamps
+signal TriggerTimeStampCount: std_logic_vector(47 downto 0);
+signal TriggerTimeStampExtReset: std_logic_vector(1 downto 0);
+signal DoTriggerTimeStampExtReset: std_logic;
+
 
 begin
 -- DG: debug stuff
@@ -453,17 +464,34 @@ DCSPktBuff : LinkFIFO
     empty => DCSTxBuff_Emtpy,
 	 rd_data_count => DCSPktRdCnt);
 
+-- DG: change FIFO type b.c. now TimeStamps are generated
+-- 	 in response to external triggers (on Sysclk) and are
+--     read back by Packet_Former (on UserClk2(0))
 -- Queue up time stamps for later checking
-TimeStampBuff : TrigPktBuff
+TimeStampBuff : ExtTrigToFiber
   PORT MAP (rst => GTPRxRst,
-    clk => UsrClk2(0),
-    din => GTPRxReg(0),
+    wr_clk => SysClk, -- Clock for recognizing external trigger
+	 rd_clk => UsrClk2(0), -- Clock for sending data over fiber
+    din => MicrobunchCount, -- DG: change to take in Microbunchcount
     wr_en => TStmpBuff_wr_en,
     rd_en => TStmpBuff_rd_en,
     dout => TStmpBuff_Out,
     full => TStmpBuff_Full,
     empty => TStmpBuff_Emtpy,
-	 data_count => TStmpWds);
+	 rd_data_count => TStmpWds);
+	 
+-- Save External Trigger TimeStamp
+ExtTrigTimeStampBuff : ExtTrigToFiber
+	PORT MAP (rst => GTPRxRst,
+	wr_clk => SysClk,
+	rd_clk => UsrClk2(0),
+	din => TriggerTimeStampCount,
+	wr_en => ExtTrigTStampBuff_wr_en,
+	rd_en => ExtTrigTStampBuff_rd_en,
+	dout => ExtTrigTStampBuff_Out,
+	full => ExtTrigTStampBuff_Full,
+	empty => ExtTrigTStampBuff_Empty,
+	rd_data_count => ExtTrigTSTampBuffWds);
 
 -- DP Ram for storing FEB addresses
 FEBIDList : FEBIDListRam
@@ -672,8 +700,13 @@ begin
 	LinkFIFORdReq <= (others =>'0'); StatOr <= X"00"; 
 	EvTxWdCnt <= (others => '0'); EvTxWdCntTC <= '0'; EventBuff_RdEn <= '0';
 	FIFOCount <= (others => (others => '0')); EventBuff_WrtEn <= '0';
-	TStmpBuff_wr_en <= '0'; TStmpBuff_rd_en <= '0'; EvBuffWrtGate <= '0';
+	-- DG: reset external trigger timing buff rd en
+	ExtTrigTStampBuff_rd_en <= '0';
+	-- DG: move TStmpBuff_wr_en to SysClk
+	TStmpBuff_rd_en <= '0'; EvBuffWrtGate <= '0';
+	ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
 	TStmpBuff_Full <= '0'; TStmpBuff_Emtpy <= '0';
+	ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
 	TxPkCnt <= (others => '0'); Pkt_Timer <= X"0";
 	EmptyLatch <= "000"; En_PRBS(0) <= "000";
 	FormStatReg <= "000"; GTPRxBuff_wr_en(0) <= '0'; 
@@ -744,10 +777,16 @@ elsif rising_edge (UsrClk2(0)) then
 			Case Pkt_Timer is
 			 When X"A" => GTPTxStage(0) <= X"1C" & TxSeqNo(0) & "00101"; TxCRCDat(0) <= X"0000";
 			 When X"8" => GTPTxStage(0) <= X"8050"; TxCRCDat(0) <= X"8050";
-			 When X"7" => GTPTxStage(0) <= "00000" & TxPkCnt; TxCRCDat(0) <= "00000" & TxPkCnt;  
-			 When X"6" => GTPTxStage(0) <= TStmpBuff_Out; TxCRCDat(0) <= TStmpBuff_Out;
-			 When X"5" => GTPTxStage(0) <= TStmpBuff_Out; TxCRCDat(0) <= TStmpBuff_Out;
-			 When X"4" => GTPTxStage(0) <= TStmpBuff_Out; TxCRCDat(0) <= TStmpBuff_Out;
+			 When X"7" => GTPTxStage(0) <= "00000" & TxPkCnt; TxCRCDat(0) <= "00000" & TxPkCnt;
+			 -- DG: change TStmpBuff from 16bits wide to 48 bits wide
+			 -- DG: TODO: is this the correct endian-ness?
+			 When X"6" => GTPTxStage(0) <= TStmpBuff_Out(15 downto  0); TxCRCDat(0) <= TStmpBuff_Out(15 downto  0);
+			 When X"5" => GTPTxStage(0) <= TStmpBuff_Out(31 downto 16); TxCRCDat(0) <= TStmpBuff_Out(31 downto 16);
+			 When X"4" => GTPTxStage(0) <= TStmpBuff_Out(47 downto 32); TxCRCDat(0) <= TStmpBuff_Out(47 downto 32);
+			 -- DG: use two of the "buffer" words to include the trigger time
+			 -- only save the low two words -- TODO: is this sufficient?
+			 When X"3" => GTPTxStage(0) <= ExtTrigTStampBuff_Out(15 downto  0); TxCRCDat(0) <= ExtTrigTStampBuff_Out(15 downto  0);
+			 When X"2" => GTPTxStage(0) <= ExtTrigTStampBuff_Out(31 downto 16); TxCRCDat(0) <= ExtTrigTStampBuff_Out(31 downto 16);
 			 When X"0" => GTPTxStage(0) <= X"BC3C"; TxCRCDat(0) <= X"0000";
 			 When others => GTPTxStage(0) <= X"0000"; TxCRCDat(0) <= X"0000";
 	      end case;
@@ -847,17 +886,14 @@ elsif rising_edge (UsrClk2(0)) then
 	else LinkFIFOStatReg <= LinkFIFOStatReg;
 	end if;
 
--- DG: TODO:
-	-- Set timestamp buffer write enable back on????
-	-- Is this buffer avilable for use as a way to generate timestamps
-	-- internally?
-
--- Store the time stamp subfield from the trigger request packet for later checking
-	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" 
-	and TrigReqWdCnt >= 5 and TrigReqWdCnt <= 7 	
-	then TStmpBuff_wr_en <= '0'; --DANIEL, WAS 1
-	else TStmpBuff_wr_en <= '0';
-	end if;
+-- DG: Turn off setting TStmpBuff_wr_en on reception of a Data Request packet.
+-- 	 This is now done by the Ext Trig code
+-- -- Store the time stamp subfield from the trigger request packet for later checking
+--	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" 
+--	and TrigReqWdCnt >= 5 and TrigReqWdCnt <= 7 	
+--	then TStmpBuff_wr_en <= '1';
+--	else TStmpBuff_wr_en <= '0';
+--	end if;
 
 	LinkRDDL(0) <= not CpldCS and not uCRD;
 	LinkRDDL(1) <= LinkRDDL(0);
@@ -1157,8 +1193,15 @@ end if;
 	else EvTxWdCntTC <= EvTxWdCntTC;
 	end if;
 
+-- DG: change TStmpBuff setup
+-- 
+-- Before, TStmpBuff was 16bits wide and so neded to be read 3 times to get
+-- the full 48bit Timestamp. Now it is 48 bits, so it only needs to be read once
+
 -- Read of timestamps for use in forming the header packet
- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5)
+
+-- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5) -- DG: OLD
+if (Packet_Former = WrtHdrPkt and Pkt_Timer = 7) -- DG: NEW 
 	then TStmpBuff_rd_en <= '1';
 	else TStmpBuff_rd_en <= '0';
 	end if;
@@ -1779,8 +1822,16 @@ main : process(SysClk, CpldRst)
 	COUNTRESET <= '0';
 	MANTRIG <= '0';
 	
+-- DG: reset Write-end of Ext Trg -> Fiber FIFO's
+	TStmpBuff_wr_en <= '0';
+	ExtTrigTStampBuff_wr_en <= '0';
+	
 	HrtBtTxEnPeriodic <= '0';
 	HrtBtTxEnExtTrig <= '0';
+	
+	TriggerTimeStampCount <= (others => '0');
+	TriggerTimeStampExtReset <= (others => '0');
+	DoTriggerTimeStampExtReset <= '0';
 	
  elsif rising_edge (SysClk) then 
 
@@ -2352,6 +2403,15 @@ if WrDL = 1 and uCA(9 downto 0) = TrigCtrlAddr and uCD(0) = '1'
  else  IntTrig <= IntTrig;
 end if;
 
+-- DG: TTL PPS logic
+
+-- use GPI input (GPIDL) as reset to trigger time counter
+if GPIDL(0) = 1 and DoTriggerTimeStampExtReset = '1'
+	then
+		TriggerTimeStampCount <= (others => '0');
+	else
+		TriggerTimeStampCount <= TriggerTimeStampCount + 1;
+end if;
 
 -- DG: Nim-Trig logic
 -- Write to ExternalTriggerControl D0 to reset trigger count
@@ -2406,7 +2466,6 @@ if Trig_Tx_Ack = '1'
 	then Trig_Tx_Req <= '0';
 end if;
 
-
 -- external trigger inhibit setting
 if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrLo
 then 
@@ -2453,6 +2512,27 @@ end if;
 
 NimTrigOLD <= NimTrigBUF(1);
 end if; --rising edge
+
+-- Save the trigger timestamp:
+if TstTrigEn = '1' and
+	ExtTriggerInhibitCount = 0 and
+	COUNTRESET = '0' and
+	((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1') -- Recognizing External NIM Trigger
+then
+	ExtTrigTStampBuff_wr_en <= '1';
+else 
+	ExtTrigTStampBuff_wr_en <= '0';
+end if;
+-- Save the Microbunch Count:
+if TstTrigEn = '1' and
+	ExtTriggerInhibitCount = 0 and
+	COUNTRESET = '0' and
+	((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1') -- Recognizing External NIM Trigger
+then
+	TStmpBuff_wr_en <= '1';
+else
+	TStmpBuff_wr_en <= '0';
+end if;
 
 end process;
 
