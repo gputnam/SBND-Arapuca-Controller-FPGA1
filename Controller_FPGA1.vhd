@@ -345,6 +345,15 @@ signal TriggerTimeStampCount: std_logic_vector(47 downto 0);
 signal TriggerTimeStampExtReset: std_logic_vector(1 downto 0);
 signal DoTriggerTimeStampExtReset: std_logic;
 
+-- DG: signals for determining  trigger type
+signal TriggerTypeGatePeriod: std_logic_vector(5 downto 0);
+signal TriggerTypeGateCount: std_logic_vector(5 downto 0);
+signal TriggerTypeCount: std_logic_vector(3 downto 0);
+Type TriggerVariant is (TriggerVariantBeamOn, TriggerVariantBeamOff);
+signal TriggerType: TriggerVariant;
+
+-- when to issue trigger
+signal IssueExtNimTrigger: std_logic;
 
 begin
 -- DG: debug stuff
@@ -397,7 +406,7 @@ Sys_Pll : SysPll
     LOCKED => Pll_Locked);
 
 HrtBtData(19 downto 0) <= MicrobunchCount(19 downto 0);
-HrtBtData(20) <= Beam_On;
+HrtBtData(20) <= '1' when TriggerType = TriggerVariantBeamOn else '0';
 HrtBtData(21) <= '0' when MicrobunchCount(31 downto 20) = 0 else '1';
 HrtBtData(23 downto 22) <= "00";
 -- FM transmitter for boadcasting microbunch numbers to the FEBs
@@ -1840,6 +1849,13 @@ main : process(SysClk, CpldRst)
 	TriggerTimeStampExtReset <= (others => '0');
 	DoTriggerTimeStampExtReset <= '0';
 	
+-- DG: trigger gate signals
+	TriggerTypeGatePeriod <= (others => '0');
+	TriggerTypeGateCount <= (others => '0');
+	TriggerTypeCount <= (others => '0');
+	TriggerType <= TriggerVariantBeamOff;
+	IssueExtNimTrigger <= '0';
+	
  elsif rising_edge (SysClk) then 
 
 -- Synchronous edge detectors for read and write strobes
@@ -2438,15 +2454,80 @@ if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerCont
 	then PeriodicMicrobunch <= uCD(2);
 	else PeriodicMicrobunch <= PeriodicMicrobunch;
 end if;
-
+-- DG: D3 to set whether to reset TriggerTimeSTamp on external GPI pulse (PPS)
+-- ignored if D0 or D1 are set
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress
+	and uCD(1 downto 0) = "00"
+	then DoTriggerTimeStampExtReset <= uCD(3);
+	else DoTriggerTimeStampExtReset <= DoTriggerTimeStampExtReset;
+end if;
+-- DG: bits 4-9 set the trigger type gate
+-- ignored if D) or D1 are set
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress
+	and uCD(1 downto 0) = "00"
+	then TriggerTypeGatePeriod <= uCD(9 downto 4);
+	else TriggerTypeGatePeriod <=  TriggerTypeGatePeriod;
+end if;
+	
 -- DG: TODO: add configuration if trigger signal is synchronous w.r.t. SysClk
 NimTrigBUF(0) <= NimTrig;
 NimTrigBUF(1) <= NimTrigBUF(0);
 
 -- Recognizing External NIM Trigger
 if ExtTriggerInhibitCount = 0 and
+	TriggerTypeGateCount = 0 and
 	COUNTRESET = '0' and
 	((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1')
+then
+	-- begin the gate
+	TriggerTypeGateCount <= TriggerTypeGatePeriod;
+-- reset
+elsif COUNTRESET = '1'
+then
+	TriggerTypeGateCount <= (others => '0');
+-- countdown
+elsif TriggerTypeGateCount /= 0
+then
+	TriggerTypeGateCount <= TriggerTypeGateCount - 1;
+else
+	TriggerTypeGateCount <= TriggerTypeGateCount;
+end if;
+
+-- count up the rising edges during the gate
+if TriggerTypeGateCount /= 0 and (NimTrigBUF(1) = '0' and NimTrigOLD = '1')
+then 
+	TriggerTypeCount <= TriggerTypeCount + 1;
+else
+	TriggerTypeCount <= (others => '0');
+end if;
+
+-- set to issue trigger
+if COUNTRESET = '0' and (
+		-- Gate is enabled -- wait for the count to wind down
+		TriggerTypeGateCount = 1 or 
+		-- Gate is disabled -- edge detect external trigger
+		(TriggerTypeGatePeriod = 0 and ExtTriggerInhibitCount = 0 and ((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1')))
+then
+	IssueExtNimTrigger <= '1';
+
+else
+	IssueExtNimTrigger <= '0';
+end if;
+
+-- determine the trigger variant
+if IssueExtNimTrigger = '1' and COUNTRESET = '0'
+then
+	if TriggerTypeCount = 0
+		then TriggerType <= TriggerVariantBeamOn;
+		else TriggerType <= TriggerVariantBeamOff;
+	end if;
+else
+	TriggerType <= TriggerType;
+end if;
+
+
+-- Ready to issue the trigger
+if IssueExtNimTrigger = '1' and COUNTRESET = '0'
 then
 	NimTrigCount <= NimTrigCount + '1';
 	if IntTmgEn = '1' then
@@ -2508,7 +2589,7 @@ if
 	-- if setting microbunch periodically
 	((PeriodicMicrobunch = '1' and PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod = PeriodicMicrobunchCount)
 	-- if setting microbunch from external trigger
-	or (PeriodicMicrobunch = '0' and ExtTriggerInhibitCount = 0 and ((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1' )))
+	or (PeriodicMicrobunch = '0' and IssueExtNimTrigger = '1'))
 		then MicrobunchCount <= MicrobunchCount + 1;
 elsif CountReset = '1' or IntTmgEn = '0'
 then 
@@ -2519,9 +2600,7 @@ end if;
 
 -- Save the trigger timestamp:
 if TstTrigEn = '1' and
-	ExtTriggerInhibitCount = 0 and
-	COUNTRESET = '0' and
-	((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1') -- Recognizing External NIM Trigger
+	IssueExtNimTrigger = '1' -- Recognizing External NIM Trigger
 then
 	ExtTrigTStampBuff_wr_en <= '1';
 else 
@@ -2529,9 +2608,7 @@ else
 end if;
 -- Save the Microbunch Count:
 if TstTrigEn = '1' and
-	ExtTriggerInhibitCount = 0 and
-	COUNTRESET = '0' and
-	((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1') -- Recognizing External NIM Trigger
+	IssueExtNimTrigger = '1' -- Recognizing External NIM Trigger
 then
 	TStmpBuff_wr_en <= '1';
 else
@@ -2598,7 +2675,7 @@ iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel
 		 X"00" & MarkerBits when MarkerBitsAd,
 		 -- DG: address to querry number of triggers
 		 COUNTRESET & NimTrigCount(14 downto 0) when ExternalTriggerInfoAddress,
-		 X"000" & "0" & PeriodicMicrobunch & "00" when ExternalTriggerControlAddress,
+		 X"0" & "00" & TriggerTypeGatePeriod & DoTriggerTimeStampExtReset & PeriodicMicrobunch & "00" when ExternalTriggerControlAddress,
 		 PeriodicMicrobunchPeriod(31 downto 16) when PeriodicMicrobunchPeriodAddrHi,
 		 PeriodicMicrobunchPeriod(15 downto 0) when PeriodicMicrobunchPeriodAddrLo,
 		 ExtTriggerInhibit(47 downto 32) when ExternalTriggerInhibitAddrHi,
