@@ -1200,13 +1200,13 @@ end if;
 -- Read of timestamps for use in forming the header packet
 
 -- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5) -- DG: OLD
-if (Packet_Former = WrtHdrPkt and Pkt_Timer = 8) -- DG: NEW 
+if (Packet_Former = WrtHdrPkt and Pkt_Timer = 7) -- DG: NEW 
 	then TStmpBuff_rd_en <= '1';
 	else TStmpBuff_rd_en <= '0';
 end if;
 
 -- DG: also read the trigger time stamp FIFO
-if (Packet_Former = WrtHdrPkt and Pkt_Timer = 5)
+if (Packet_Former = WrtHdrPkt and Pkt_Timer = 4)
 	then ExtTrigTStampBuff_rd_en <= '1';
 	else ExtTrigTStampBuff_rd_en <= '0';
 end if;
