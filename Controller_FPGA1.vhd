@@ -280,7 +280,7 @@ signal TrgPktRdCnt : std_logic_vector (10 downto 0);
 
 -- Time stamp FIFO
 signal TStmpBuff_Out : std_logic_vector (47 downto 0); -- DG: change from 16 bits to 48
-signal TStmpBuff_wr_en,TStmpBuff_rd_en,TStmpBuff_Full,TStmpBuff_Emtpy : std_logic;
+signal TStmpBuff_wr_en,TStmpBuff_rd_en,TStmpBuff_Full,TStmpBuff_Empty : std_logic;
 signal TStmpWds : std_logic_vector (8 downto 0); 
 
 -- DG: External Trigger TimeStamp FIFO:
@@ -355,7 +355,7 @@ Debug(4) <= NimTrigBUF(1);
 Debug(5) <= NimTrigCount(0);
 -- Debug(6) <= NimTrigCount(1);
 Debug(6) <= Trig_Tx_Req;
-Debug(7) <= Trig_Tx_Ack;
+Debug(7) <= '1' when ExtTriggerInhibitCount /= 0 else '0';
 Debug(8) <= HrtBtTxEn;
 
    BunchClkIn : IDDR2
@@ -477,7 +477,7 @@ TimeStampBuff : ExtTrigToFiber
     rd_en => TStmpBuff_rd_en,
     dout => TStmpBuff_Out,
     full => TStmpBuff_Full,
-    empty => TStmpBuff_Emtpy,
+    empty => TStmpBuff_Empty,
 	 rd_data_count => TStmpWds);
 	 
 -- Save External Trigger TimeStamp
@@ -704,9 +704,8 @@ begin
 	ExtTrigTStampBuff_rd_en <= '0';
 	-- DG: move TStmpBuff_wr_en to SysClk
 	TStmpBuff_rd_en <= '0'; EvBuffWrtGate <= '0';
-	ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
-	TStmpBuff_Full <= '0'; TStmpBuff_Emtpy <= '0';
-	ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
+	-- TStmpBuff_Full <= '0'; TStmpBuff_Empty <= '0';
+	-- ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
 	TxPkCnt <= (others => '0'); Pkt_Timer <= X"0";
 	EmptyLatch <= "000"; En_PRBS(0) <= "000";
 	FormStatReg <= "000"; GTPRxBuff_wr_en(0) <= '0'; 
@@ -935,7 +934,7 @@ if Packet_Parser = Check_Seq_No and GTPRxBuff_Out(0)(7 downto 5) /= RxSeqNo(0)
 ---------------------------------------------------------------------------
 Case Event_Builder is
 	when Idle => --Debug(10 downto 7) <= X"0";
-		if LinkFIFOEmpty /= 7 and FormHold = '0' -- DG: TODO: turn this back on if timestamps on? -- and TStmpWds >= 3 
+		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpWds /= 0-- DG: TODO: turn this back on if timestamps on? -- and TStmpWds >= 3 
 		 then Event_Builder <= WaitEvent;
 		else Event_Builder <= Idle;
 		end if;
@@ -1201,10 +1200,18 @@ end if;
 -- Read of timestamps for use in forming the header packet
 
 -- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5) -- DG: OLD
-if (Packet_Former = WrtHdrPkt and Pkt_Timer = 7) -- DG: NEW 
+if (Packet_Former = WrtHdrPkt and Pkt_Timer = 8) -- DG: NEW 
 	then TStmpBuff_rd_en <= '1';
 	else TStmpBuff_rd_en <= '0';
-	end if;
+end if;
+
+-- DG: also read the trigger time stamp FIFO
+if (Packet_Former = WrtHdrPkt and Pkt_Timer = 5)
+	then ExtTrigTStampBuff_rd_en <= '1';
+	else ExtTrigTStampBuff_rd_en <= '0';
+end if;
+
+-- Also read trigger time stamp for 
 
 -- Increment the data request counter when forming the header packet.
 if Packet_Former = WrtHdrPkt and Pkt_Timer = 9 then DReq_Count <= DReq_Count + 1;
@@ -2510,9 +2517,6 @@ else
 		MicrobunchCount <= MicrobunchCount;
 end if;
 
-NimTrigOLD <= NimTrigBUF(1);
-end if; --rising edge
-
 -- Save the trigger timestamp:
 if TstTrigEn = '1' and
 	ExtTriggerInhibitCount = 0 and
@@ -2533,6 +2537,9 @@ then
 else
 	TStmpBuff_wr_en <= '0';
 end if;
+
+NimTrigOLD <= NimTrigBUF(1);
+end if; --rising edge
 
 end process;
 
