@@ -332,6 +332,10 @@ signal NimTrigCount: std_logic_vector(15 downto 0);
 signal NimTrigBUF: std_logic_vector (1 downto 0);
 signal NimTrigOLD: std_logic;
 
+-- DG: signals to recognize external PPS (on GPI input)
+signal ExtPPSHold: std_logic;
+signal ExtPPSBUF: std_logic_vector(1 downto 0);
+
 -- signals for enabling sending heart-beats
 signal HrtBtTxEnExtTrig: std_logic;
 signal HrtBtTxEnPeriodic: std_logic;
@@ -943,7 +947,7 @@ if Packet_Parser = Check_Seq_No and GTPRxBuff_Out(0)(7 downto 5) /= RxSeqNo(0)
 ---------------------------------------------------------------------------
 Case Event_Builder is
 	when Idle => --Debug(10 downto 7) <= X"0";
-		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpWds /= 0-- DG: TODO: turn this back on if timestamps on? -- and TStmpWds >= 3 
+		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpBuff_Empty = '0' --DG: used  to check if TStmpWds >= 3. Now  the whole timestamp is only in one word, so we only need to check if the buffer has data 
 		 then Event_Builder <= WaitEvent;
 		else Event_Builder <= Idle;
 		end if;
@@ -2428,8 +2432,8 @@ end if;
 
 -- DG: TTL PPS logic
 
--- use GPI input (GPIDL) as reset to trigger time counter
-if GPIDL(0) = 1 and DoTriggerTimeStampExtReset = '1'
+-- use GPI input (ExtPPSBUF) as reset to trigger time counter
+if ExtPPSBUF = 1 and DoTriggerTimeStampExtReset = '1'
 	then
 		TriggerTimeStampCount <= (others => '0');
 	else
@@ -2473,6 +2477,11 @@ end if;
 NimTrigBUF(0) <= NimTrig;
 NimTrigBUF(1) <= NimTrigBUF(0);
 
+-- DG: input PPS
+ExtPPSHold <= GPI;
+ExtPPSBUF(0) <= ExtPPSHold;
+ExtPPSBUF(1) <= ExtPPSBUF(0);
+
 -- Recognizing External NIM Trigger
 if ExtTriggerInhibitCount = 0 and
 	TriggerTypeGateCount = 0 and
@@ -2493,14 +2502,6 @@ else
 	TriggerTypeGateCount <= TriggerTypeGateCount;
 end if;
 
--- count up the rising edges during the gate
-if TriggerTypeGateCount /= 0 and (NimTrigBUF(1) = '0' and NimTrigOLD = '1')
-then 
-	TriggerTypeCount <= TriggerTypeCount + 1;
-else
-	TriggerTypeCount <= (others => '0');
-end if;
-
 -- set to issue trigger
 if COUNTRESET = '0' and (
 		-- Gate is enabled -- wait for the count to wind down
@@ -2518,13 +2519,25 @@ end if;
 if IssueExtNimTrigger = '1' and COUNTRESET = '0'
 then
 	if TriggerTypeCount = 0
-		then TriggerType <= TriggerVariantBeamOn;
-		else TriggerType <= TriggerVariantBeamOff;
+		then TriggerType <= TriggerVariantBeamOff;
+		else TriggerType <= TriggerVariantBeamOn;
 	end if;
 else
 	TriggerType <= TriggerType;
 end if;
 
+-- count up the rising edges during the gate
+if TriggerTypeGateCount /= 0 and (NimTrigBUF(1) = '0' and NimTrigOLD = '1') 
+	then TriggerTypeCount <= TriggerTypeCount + 1;
+-- on issue trigger, reset the count
+elsif IssueExtNimTrigger = '1' and COUNTRESET = '0'
+	then TriggerTypeCount <= (others => '0');
+-- on count reset, reset  the count
+elsif COUNTRESET = '1'
+	then TriggerTypeCount <= (others => '0');
+else
+	TriggerTypeCount <= TriggerTypeCount;
+end if;
 
 -- Ready to issue the trigger
 if IssueExtNimTrigger = '1' and COUNTRESET = '0'
@@ -2558,27 +2571,26 @@ end if;
 if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrLo
 then 
 	ExtTriggerInhibit(15 downto 0) <= uCD(15 downto 0);
-	ExtTriggerInhibitCount(15 downto 0) <= uCD(15 downto 0);
 elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrMd
 then 
 	ExtTriggerInhibit(31 downto 16) <= uCD(15 downto 0);
-	ExtTriggerInhibitCount(31 downto 16) <= uCD(15 downto 0);
 elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrHi
 	then 
 	ExtTriggerInhibit(47 downto 32) <= uCD(15 downto 0);
-	ExtTriggerInhibitCount(47 downto 32) <= uCD(15 downto 0);
--- if not being set but the value is not zero, decrement it
-elsif ExtTriggerInhibitCount /= 0
+else 
+	ExtTriggerInhibit <= ExtTriggerInhibit;
+end if;
+
+-- Count of the Inhibit -- if it is not zero, decrement
+if ExtTriggerInhibitCount /= 0
 	then 
 	ExtTriggerInhibitCount <= ExtTriggerInhibitCount - 1;
-	ExtTriggerInhibit <= ExtTriggerInhibit;
 -- if we see a trigger, reset the inhibit
 elsif NimTrigBUF(1) = '0' and NimTrigOLD = '1'
 	then 
 	ExtTriggerInhibitCount <= ExtTriggerInhibit;
 else
 	ExtTriggerInhibitCount <= ExtTriggerInhibitCount;
-	ExtTriggerInhibit <= ExtTriggerInhibit;
 end if;
 
 -- Increment the microbunch number
