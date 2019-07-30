@@ -2600,16 +2600,49 @@ end if;
 end process;
 
 
--- DG: process to manage microbunch number generation
+-- DG: external trigger process
 Trigger: process
 begin
 NimTrig <= '0';
-wait for 300 ns;
--- send a trigger
+wait for 375 ns;
+-- send a trigger -- OFF beam
 NimTrig <= '1';
-wait for 30 ns;
+wait for 25 ns;
+NimTrig <= '0';
+
+wait for 300 ns;
+
+
+-- send a trigger -- ON beam
+NimTrig <= '1';
+wait for 25 ns;
+NimTrig <= '0';
+wait for 25 ns;
+NimTrig <= '1';
+wait for 25 ns;
+NimTrig <= '0';
+
+wait for 300 ns;
+
+-- send a trigger -- ON beam
+NimTrig <= '1';
+wait for 25 ns;
+NimTrig <= '0';
+wait for 25 ns;
+NimTrig <= '1';
+wait for 25 ns;
 NimTrig <= '0';
 -- wait for 300 ns;
+end process;
+
+-- DG: PPS process
+PPS: process
+begin
+GPI <= '0';
+wait for 1 us;
+GPI <= '1';
+wait for 100 ns;
+GPI <= '0';
 end process;
 
 
@@ -2710,7 +2743,8 @@ uCIO : process
 		  wait for 5 ns;
 		  CpldCS <= '0';
 		  wait for 5 ns;
-		  uCD <= X"0004";
+		  -- Periodic Microbunch ON, reset Ext Trig timestamp ON, Pulse detect gate 15	
+		  uCD <= X"00FC";
 		  uCWr <= '0';
 		  wait for 15 ns;
 		  uCWr <= '1';
@@ -2734,13 +2768,14 @@ uCIO : process
 		  uCD <= (others => 'Z');
 		  wait for 10 ns;	
 		  
-	-- turn external trigger generation back on
+	-- turn external trigger generation of microbunches back on
 	wait for 500 ns;
 		  uCA <= "00" & ExternalTriggerControlAddress;
 		  wait for 5 ns;
 		  CpldCS <= '0';
 		  wait for 5 ns;
-		  uCD <= X"0000";
+		  -- Periodic Microbunch OFF, reset Ext Trig timestamp ON, Pulse detect gate 15	
+		  uCD <= X"00F8";
 		  uCWr <= '0';
 		  wait for 15 ns;
 		  uCWr <= '1';
