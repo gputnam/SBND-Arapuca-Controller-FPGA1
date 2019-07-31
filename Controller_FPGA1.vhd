@@ -330,10 +330,10 @@ signal PunchBits : std_logic_vector (3 downto 0);
 -- DG: EXTERNAL TRIGGER SIGNALS --
 signal NimTrigCount: std_logic_vector(15 downto 0);
 signal NimTrigBUF: std_logic_vector (1 downto 0);
-signal NimTrigOLD: std_logic;
+-- signal NimTrigOLD: std_logic;
 
 -- DG: signals to recognize external PPS (on GPI input)
-signal ExtPPSHold: std_logic;
+-- signal ExtPPSHold: std_logic;
 signal ExtPPSBUF: std_logic_vector(1 downto 0);
 
 -- signals for enabling sending heart-beats
@@ -346,30 +346,29 @@ signal PeriodicMicrobunchPeriod: std_logic_vector(31 downto 0);
 
 -- (more) DG: signals for generation of trigger time stamps
 signal TriggerTimeStampCount: std_logic_vector(47 downto 0);
-signal TriggerTimeStampExtReset: std_logic_vector(1 downto 0);
 signal DoTriggerTimeStampExtReset: std_logic;
 
 -- DG: signals for determining  trigger type
 signal TriggerTypeGatePeriod: std_logic_vector(5 downto 0);
 signal TriggerTypeGateCount: std_logic_vector(5 downto 0);
-signal TriggerTypeCount: std_logic_vector(3 downto 0);
 Type TriggerVariant is (TriggerVariantBeamOn, TriggerVariantBeamOff);
 signal TriggerType: TriggerVariant;
 
 -- when to issue trigger
 signal IssueExtNimTrigger: std_logic;
 
+signal ClkDiv2: std_logic;
+
 begin
 -- DG: debug stuff
-Debug(1) <= NimTrig;
-Debug(2) <= NimTrigOLD;
-Debug(3) <= NimTrigBUF(0);
-Debug(4) <= NimTrigBUF(1);
-Debug(5) <= NimTrigCount(0);
--- Debug(6) <= NimTrigCount(1);
-Debug(6) <= Trig_Tx_Req;
-Debug(7) <= '1' when ExtTriggerInhibitCount /= 0 else '0';
-Debug(8) <= HrtBtTxEn;
+Debug(1) <= ClkDiv2;
+Debug(2) <= '1' when NimTrigBUF = 1 else '0';
+Debug(3) <= '1' when TriggerTypeGateCount  = 1 else  '0';
+Debug(4) <= IssueExtNimTrigger;
+Debug(5) <= HrtBtTxEn;
+Debug(6) <= ExtPPSBuf(1);
+Debug(7) <= '1' when TriggerTimeStampCount = 0 else '0';
+Debug(8) <= '1' when ExtTriggerInhibitCount /= 0 else '0';
 
    BunchClkIn : IDDR2
    generic map(
@@ -1850,17 +1849,19 @@ main : process(SysClk, CpldRst)
 	HrtBtTxEnExtTrig <= '0';
 	
 	TriggerTimeStampCount <= (others => '0');
-	TriggerTimeStampExtReset <= (others => '0');
 	DoTriggerTimeStampExtReset <= '0';
 	
 -- DG: trigger gate signals
 	TriggerTypeGatePeriod <= (others => '0');
 	TriggerTypeGateCount <= (others => '0');
-	TriggerTypeCount <= (others => '0');
 	TriggerType <= TriggerVariantBeamOff;
 	IssueExtNimTrigger <= '0';
 	
+	ClkDiv2 <= '0';
+	
  elsif rising_edge (SysClk) then 
+ 
+ ClkDiv2 <= not ClkDiv2;
 
 -- Synchronous edge detectors for read and write strobes
 RDDL(0) <= not uCRD and not CpldCS;
@@ -2478,15 +2479,15 @@ NimTrigBUF(0) <= NimTrig;
 NimTrigBUF(1) <= NimTrigBUF(0);
 
 -- DG: input PPS
-ExtPPSHold <= GPI;
-ExtPPSBUF(0) <= ExtPPSHold;
+-- ExtPPSHold <= GPI;
+ExtPPSBUF(0) <= GPI;
 ExtPPSBUF(1) <= ExtPPSBUF(0);
 
 -- Recognizing External NIM Trigger
 if ExtTriggerInhibitCount = 0 and
 	TriggerTypeGateCount = 0 and
 	COUNTRESET = '0' and
-	((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1')
+	(NimTrigBuf = 1 or MANTRIG = '1')
 then
 	-- begin the gate
 	TriggerTypeGateCount <= TriggerTypeGatePeriod;
@@ -2507,7 +2508,7 @@ if COUNTRESET = '0' and (
 		-- Gate is enabled -- wait for the count to wind down
 		TriggerTypeGateCount = 1 or 
 		-- Gate is disabled -- edge detect external trigger
-		(TriggerTypeGatePeriod = 0 and ExtTriggerInhibitCount = 0 and ((NimTrigBUF(1) = '0' and NimTrigOLD = '1') or MANTRIG = '1')))
+		(TriggerTypeGatePeriod = 0 and ExtTriggerInhibitCount = 0 and (NimTrigBuf = 1 or MANTRIG = '1')))
 then
 	IssueExtNimTrigger <= '1';
 
@@ -2515,28 +2516,21 @@ else
 	IssueExtNimTrigger <= '0';
 end if;
 
--- determine the trigger variant
+-- determine the trigger variant when we issue the trigger
 if IssueExtNimTrigger = '1' and COUNTRESET = '0'
 then
-	if TriggerTypeCount = 0
+	-- not configured to check for on/off beam -- default to off beam
+	if TriggerTypeGatePeriod = 0
 		then TriggerType <= TriggerVariantBeamOff;
-		else TriggerType <= TriggerVariantBeamOn;
+	-- configured to check
+	-- if trigger is still high after gate time, beam ON
+	elsif NimTrigBuf(0) = '1'
+		then TriggerType <= TriggerVariantBeamOn;
+	-- if trigger is low, set to beam OFF
+	else TriggerType <= TriggerVariantBeamOff;
 	end if;
 else
 	TriggerType <= TriggerType;
-end if;
-
--- count up the rising edges during the gate
-if TriggerTypeGateCount /= 0 and (NimTrigBUF(1) = '0' and NimTrigOLD = '1') 
-	then TriggerTypeCount <= TriggerTypeCount + 1;
--- on issue trigger, reset the count
-elsif IssueExtNimTrigger = '1' and COUNTRESET = '0'
-	then TriggerTypeCount <= (others => '0');
--- on count reset, reset  the count
-elsif COUNTRESET = '1'
-	then TriggerTypeCount <= (others => '0');
-else
-	TriggerTypeCount <= TriggerTypeCount;
 end if;
 
 -- Ready to issue the trigger
@@ -2586,7 +2580,7 @@ if ExtTriggerInhibitCount /= 0
 	then 
 	ExtTriggerInhibitCount <= ExtTriggerInhibitCount - 1;
 -- if we see a trigger, reset the inhibit
-elsif NimTrigBUF(1) = '0' and NimTrigOLD = '1'
+elsif NimTrigBuf = 1
 	then 
 	ExtTriggerInhibitCount <= ExtTriggerInhibit;
 else
@@ -2612,7 +2606,11 @@ end if;
 
 -- Save the trigger timestamp:
 if TstTrigEn = '1' and
-	IssueExtNimTrigger = '1' -- Recognizing External NIM Trigger
+	-- This buffer should save the exact clock cycle where
+	-- the trigger  arrived, so don't  wait for "IssueExtNimTrigger" to be ready
+	ExtTriggerInhibitCount = 0 and
+	COUNTRESET = '0' and
+	(NimTrigBuf = 1 or MANTRIG = '1')
 then
 	ExtTrigTStampBuff_wr_en <= '1';
 else 
@@ -2620,14 +2618,12 @@ else
 end if;
 -- Save the Microbunch Count:
 if TstTrigEn = '1' and
-	IssueExtNimTrigger = '1' -- Recognizing External NIM Trigger
+	IssueExtNimTrigger = '1'
 then
 	TStmpBuff_wr_en <= '1';
 else
 	TStmpBuff_wr_en <= '0';
 end if;
-
-NimTrigOLD <= NimTrigBUF(1);
 end if; --rising edge
 
 end process;
