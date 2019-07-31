@@ -2615,24 +2615,16 @@ wait for 300 ns;
 
 -- send a trigger -- ON beam
 NimTrig <= '1';
-wait for 25 ns;
-NimTrig <= '0';
-wait for 25 ns;
-NimTrig <= '1';
-wait for 25 ns;
+wait for 200 ns;
 NimTrig <= '0';
 
 wait for 300 ns;
 
 -- send a trigger -- ON beam
 NimTrig <= '1';
-wait for 25 ns;
+wait for 200 ns;
 NimTrig <= '0';
-wait for 25 ns;
-NimTrig <= '1';
-wait for 25 ns;
-NimTrig <= '0';
--- wait for 300 ns;
+
 end process;
 
 -- DG: PPS process
