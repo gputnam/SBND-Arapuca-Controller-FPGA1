@@ -2487,7 +2487,7 @@ ExtPPSBUF(1) <= ExtPPSBUF(0);
 if ExtTriggerInhibitCount = 0 and
 	TriggerTypeGateCount = 0 and
 	COUNTRESET = '0' and
-	(NimTrigBuf = 1 or MANTRIG = '1')
+	(NimTrigBuf = 2 or MANTRIG = '1')
 then
 	-- begin the gate
 	TriggerTypeGateCount <= TriggerTypeGatePeriod;
@@ -2508,7 +2508,7 @@ if COUNTRESET = '0' and (
 		-- Gate is enabled -- wait for the count to wind down
 		TriggerTypeGateCount = 1 or 
 		-- Gate is disabled -- edge detect external trigger
-		(TriggerTypeGatePeriod = 0 and ExtTriggerInhibitCount = 0 and (NimTrigBuf = 1 or MANTRIG = '1')))
+		(TriggerTypeGatePeriod = 0 and ExtTriggerInhibitCount = 0 and (NimTrigBuf = 2 or MANTRIG = '1')))
 then
 	IssueExtNimTrigger <= '1';
 
@@ -2523,8 +2523,8 @@ then
 	if TriggerTypeGatePeriod = 0
 		then TriggerType <= TriggerVariantBeamOff;
 	-- configured to check
-	-- if trigger is still high after gate time, beam ON
-	elsif NimTrigBuf(0) = '1'
+	-- if trigger is still active (active-lo) after gate time, beam ON
+	elsif NimTrigBuf(0) = '0'
 		then TriggerType <= TriggerVariantBeamOn;
 	-- if trigger is low, set to beam OFF
 	else TriggerType <= TriggerVariantBeamOff;
@@ -2580,7 +2580,7 @@ if ExtTriggerInhibitCount /= 0
 	then 
 	ExtTriggerInhibitCount <= ExtTriggerInhibitCount - 1;
 -- if we see a trigger, reset the inhibit
-elsif NimTrigBuf = 1
+elsif NimTrigBuf = 2
 	then 
 	ExtTriggerInhibitCount <= ExtTriggerInhibit;
 else
@@ -2610,7 +2610,7 @@ if TstTrigEn = '1' and
 	-- the trigger  arrived, so don't  wait for "IssueExtNimTrigger" to be ready
 	ExtTriggerInhibitCount = 0 and
 	COUNTRESET = '0' and
-	(NimTrigBuf = 1 or MANTRIG = '1')
+	(NimTrigBuf = 2 or MANTRIG = '1')
 then
 	ExtTrigTStampBuff_wr_en <= '1';
 else 
