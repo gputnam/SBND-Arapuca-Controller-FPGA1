@@ -117,6 +117,9 @@ constant ExternalTriggerInhibitAddrHi : AddrPtr := "00" & X"7C";
 constant ExternalTriggerInhibitAddrMd : AddrPtr := "00" & X"7D";
 constant ExternalTriggerInhibitAddrLo : AddrPtr := "00" & X"7E";
 
+-- DG: state machine for access to OrangeTree
+Type ZAccess_Seq is (Echo, Mailbox, Data);
+
 
 ---------------------- Broadcast addresses ------------------------------
 

@@ -354,6 +354,11 @@ signal TriggerTypeGateCount: std_logic_vector(5 downto 0);
 Type TriggerVariant is (TriggerVariantBeamOn, TriggerVariantBeamOff);
 signal TriggerType: TriggerVariant;
 
+-- DG: signals to control Orange Tree access
+signal OTAccess: ZAccess_Seq;
+signal HasOTTransmitData: std_logic;
+signal OTTransmitData: std_logic_vector(15 downto 0);
+
 -- when to issue trigger
 signal IssueExtNimTrigger: std_logic;
 
@@ -362,11 +367,11 @@ signal ClkDiv2: std_logic;
 begin
 -- DG: debug stuff
 Debug(1) <= ClkDiv2;
-Debug(2) <= '1' when NimTrigBUF = 1 else '0';
+Debug(2) <= '1' when NimTrigBUF = 2 else '0';
 Debug(3) <= '1' when TriggerTypeGateCount  = 1 else  '0';
 Debug(4) <= IssueExtNimTrigger;
-Debug(5) <= HrtBtTxEn;
-Debug(6) <= ExtPPSBuf(1);
+Debug(5) <= NimTrigBuf(0);
+Debug(6) <= '1' when TriggerType = TriggerVariantBeamOn else '0';
 Debug(7) <= '1' when TriggerTimeStampCount = 0 else '0';
 Debug(8) <= '1' when ExtTriggerInhibitCount /= 0 else '0';
 
@@ -483,7 +488,7 @@ DCSPktBuff : LinkFIFO
 TimeStampBuff : ExtTrigToFiber
   PORT MAP (rst => GTPRxRst,
     wr_clk => SysClk, -- Clock for recognizing external trigger
-	 rd_clk => UsrClk2(0), -- Clock for sending data over fiber
+	 rd_clk => EthClk, -- Clock for sending data over ethernet
     din => MicrobunchCount, -- DG: change to take in Microbunchcount
     wr_en => TStmpBuff_wr_en,
     rd_en => TStmpBuff_rd_en,
@@ -496,7 +501,7 @@ TimeStampBuff : ExtTrigToFiber
 ExtTrigTimeStampBuff : ExtTrigToFiber
 	PORT MAP (rst => GTPRxRst,
 	wr_clk => SysClk,
-	rd_clk => UsrClk2(0),
+	rd_clk => EthClk,
 	din => TriggerTimeStampCount,
 	wr_en => ExtTrigTStampBuff_wr_en,
 	rd_en => ExtTrigTStampBuff_rd_en,
@@ -516,8 +521,10 @@ FEBIDList : FEBIDListRam
     addrb => FEBID_addrb,
     doutb => FEBID_doutb);
 
+-- DG: change event buff clock to Usrclk2 to EthClk
+-- TODO: is this ok??
 EventBuff: FIFO_SC_4Kx16
-  port map (clk => UsrClk2(0),
+  port map (clk => EthClk,
 		rst => ResetHi,
 		wr_en => EventBuff_WrtEn,
 		rd_en => EventBuff_RdEn,
@@ -529,6 +536,7 @@ EventBuff: FIFO_SC_4Kx16
 -- Generate two sets of logic for the two GTP sections
 GenGTP_Pairs : for i in 0 to 1 generate
 
+-- DG: TODO: should the other TxCRCGen be moved to SysClk and Ethclk?
 -- CRC generators for transmit data
 TxCRCGen : crc 
  port map(data_in => TxCRCDat(i),
@@ -687,44 +695,47 @@ end generate;
         TILE0_TXENPRBSTST1_IN           =>      En_PRBS(1)
 );
 
--- GTP logic processes
-
--- GTP event handling process
-TrigReqTx : process (UsrClk2(0), CpldRst, LinkBuffRst)
+EventDataTransmit: process (EthClk, CpldRst)
 
 begin
 
- if CpldRst = '0' then 
-
-	CommaDL(0) <= "00"; GTPRxReg(0) <= X"0000";
-	UsrWRDL(0) <= "00"; UsrRDDL(0) <= "00";
-	Reframe(0) <= '1'; GTPTx(0) <= X"BC3C";
-	TxCharIsK(0) <= "11"; GTPTxStage(0) <= X"BC3C"; 
-	TxSeqNo(0) <= "000"; TxCRCRst(0) <= '0';
-    TxCRCEn(0) <= '0'; RdCRCEn(0) <= '0'; 
-	RxCRCRst(0) <= '0';  RxCRCRstD(0) <= '0';
-	PRBSCntRst(0) <= '0'; TrigReqWdCnt <= X"0"; 
-	-- DG: TODO: where does the reset for the Data Request write come from?
-	-- DReqBuff_wr_en <= '0'; --DANIEL
-	DCSTxBuff_wr_en <= '0'; DReq_Count <= (others =>'0');
-	LinkRDDL <= "00"; Packet_Parser <= Idle; Event_Builder <= Idle;
-	RxSeqNoErr(0) <= '0'; Packet_Former <= Idle; FormRst <= '0';
-	LinkFIFORdReq <= (others =>'0'); StatOr <= X"00"; 
-	EvTxWdCnt <= (others => '0'); EvTxWdCntTC <= '0'; EventBuff_RdEn <= '0';
-	FIFOCount <= (others => (others => '0')); EventBuff_WrtEn <= '0';
+if CpldRst = '0' then 
 	-- DG: reset external trigger timing buff rd en
 	ExtTrigTStampBuff_rd_en <= '0';
 	-- DG: move TStmpBuff_wr_en to SysClk
 	TStmpBuff_rd_en <= '0'; EvBuffWrtGate <= '0';
 	-- TStmpBuff_Full <= '0'; TStmpBuff_Empty <= '0';
 	-- ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
-	TxPkCnt <= (others => '0'); Pkt_Timer <= X"0";
-	EmptyLatch <= "000"; En_PRBS(0) <= "000";
-	FormStatReg <= "000"; GTPRxBuff_wr_en(0) <= '0'; 
-	ActiveReg <= X"000000"; LinkFIFOStatReg <= "000";
-	Stat_DReq <= '0'; AddrReg <= (others =>'0');
-	
-elsif rising_edge (UsrClk2(0)) then
+
+	UsrWRDL(0) <= "00"; 
+	GTPTx(0) <= X"BC3C";
+	TxCharIsK(0) <= "11"; 
+	TxSeqNo(0) <= "000";
+	TxCRCRst(0) <= '0';
+	TxCRCEn(0) <= '0'; 
+	TrigReqWdCnt <= X"0"; 
+	DReq_Count <= (others =>'0');
+	LinkRDDL <= "00";
+	Event_Builder <= Idle;
+	Packet_Former <= Idle;
+	FormRst <= '0';
+	LinkFIFORdReq <= (others =>'0');
+   StatOr <= X"00"; 
+	EvTxWdCnt <= (others => '0'); EvTxWdCntTC <= '0';
+	EventBuff_RdEn <= '0';
+	FIFOCount <= (others => (others => '0'));
+	EventBuff_WrtEn <= '0';
+	TxPkCnt <= (others => '0');
+	Pkt_Timer <= X"0";
+	FormStatReg <= "000";
+	GTPRxBuff_wr_en(0) <= '0';
+	ActiveReg <= X"000000";
+	LinkFIFOStatReg <= "000";
+	Stat_DReq <= '0';
+	AddrReg <= (others =>'0');
+	GTPTxStage(0) <= X"BC3C"; 
+
+elsif rising_edge (EthClk) then
 
 	if Pkt_Timer = 0 and 
 		(Packet_Former = WrtHdrPkt or Packet_Former = WrtCtrlHdrPkt 
@@ -737,34 +748,10 @@ elsif rising_edge (UsrClk2(0)) then
 	then GTPRxBuff_wr_en(0) <= '1';
 	else GTPRxBuff_wr_en(0) <= '0';
 	end if;
-
--- If a packet header is being received then reset the Rx CRC generator
-	  if Rx_IsCtrl(0) = "10" then RxCRCRst(0) <= '1';
-	else RxCRCRst(0) <= '0';
-	end if;
-
-	RxCRCRstD(0) <= RxCRCRst(0);
-	GTPRxReg(0) <= GTPRx(0);
-
-	  if Rx_IsCtrl(0) = "00" then RdCRCEn(0) <= '1'; 
-	else RdCRCEn(0) <= '0'; 
-	end if;
-
-	CommaDL(0)(0) <= Rx_IsComma(0)(0);
-	CommaDL(0)(1) <= CommaDL(0)(0);
-
--- Hold reframe until a vaild pad character set is decoded
-	if InvalidChar(0) = "00" and CommaDL(0) = 1 then Reframe(0) <= '0';
-	elsif InvalidChar(0) /= "00" then Reframe(0) <= '1';
-	else Reframe(0) <= Reframe(0);
-	end if;
-
+	
 	UsrWRDL(0)(0) <= not uCWR and not CpldCS;
    UsrWRDL(0)(1) <= UsrWRDL(1)(0);
-
-	UsrRDDL(0)(0) <= not uCRD and not CpldCS;
-	UsrRDDL(0)(1) <= UsrRDDL(0)(0);
-
+	
 	if (uCWR = '0' or uCRD = '0') and CpldCS = '0' then AddrReg <= uCA;
 	else AddrReg <= AddrReg;
 	end if;
@@ -908,38 +895,6 @@ elsif rising_edge (UsrClk2(0)) then
 
 	LinkRDDL(0) <= not CpldCS and not uCRD;
 	LinkRDDL(1) <= LinkRDDL(0);
-
----------------------------------------------------------------------------
---	Idle,Read_Type,Check_Seq_No,Wrt_uC_Queue,Wrt_FPGA_Queue,SendHeartBeat,Check_CRC
----------------------------------------------------------------------------
-
-Case Packet_Parser is
-	when Idle =>
-	 if GTPRxBuff_Emtpy(0) = '0' then Packet_Parser <= Check_Seq_No;
-	 else Packet_Parser <= Idle;
-	 end if;
-	when Check_Seq_No => 
-		if GTPRxBuff_Out(0)(4 downto 0) = 2 
-		 then Packet_Parser <= Wrt_FPGA_Queue;
-		else Packet_Parser <= Wrt_uC_Queue;
-		end if;
-	when Wrt_FPGA_Queue => 
-		if WrtCount(0) = 0 then Packet_Parser <= Check_CRC;
-		else Packet_Parser <= Wrt_FPGA_Queue;
-		end if;
-	when Wrt_uC_Queue => 
-		if WrtCount(0) = 0 then Packet_Parser <= Check_CRC;
-		else Packet_Parser <= Wrt_uC_Queue;
-		end if;
-	when Check_CRC => Packet_Parser <= Idle;
-	when others => Packet_Parser <= Idle;
-end Case;
-
-if Packet_Parser = Check_Seq_No and GTPRxBuff_Out(0)(7 downto 5) /= RxSeqNo(0)
-  then RxSeqNoErr(0) <= '1';
- elsif GTPRst = '1' then RxSeqNoErr(0) <= '0';
- end if;
-
 ---------------------------------------------------------------------------
 -- Idle,RdInWdCnt0,RdInWdCnt1,RdInWdCnt2,SumWdCnt,WrtWdCnt,RdStat0,
 -- RdStat1,RdStat2,WrtStat,WaitEvent,ReadFIFO0,ReadFIFO1,ReaddFIFO2
@@ -1243,6 +1198,93 @@ elsif Packet_Former = Idle then Pkt_Timer <= X"0";
 else Pkt_Timer <= Pkt_Timer;
 end if;
 
+
+end if; -- if CpldRst
+end process; -- process EventDataTransmit
+
+-- GTP logic processes
+
+-- GTP event handling process
+TrigReqTx : process (UsrClk2(0), CpldRst, LinkBuffRst)
+
+begin
+
+ if CpldRst = '0' then 
+ 
+
+
+
+	CommaDL(0) <= "00"; GTPRxReg(0) <= X"0000";
+	UsrRDDL(0) <= "00";
+	Reframe(0) <= '1'; 
+	
+    RdCRCEn(0) <= '0'; 
+	RxCRCRst(0) <= '0';  RxCRCRstD(0) <= '0';
+	PRBSCntRst(0) <= '0'; 
+	-- DG: TODO: where does the reset for the Data Request write come from?
+	-- DReqBuff_wr_en <= '0'; --DANIEL
+	DCSTxBuff_wr_en <= '0'; 
+	 Packet_Parser <= Idle; 
+	RxSeqNoErr(0) <= '0';  	 
+	EmptyLatch <= "000"; En_PRBS(0) <= "000";
+
+elsif rising_edge (UsrClk2(0)) then-- If a packet header is being received then reset the Rx CRC generator
+	  if Rx_IsCtrl(0) = "10" then RxCRCRst(0) <= '1';
+	else RxCRCRst(0) <= '0';
+	end if;
+
+	RxCRCRstD(0) <= RxCRCRst(0);
+	GTPRxReg(0) <= GTPRx(0);
+
+	  if Rx_IsCtrl(0) = "00" then RdCRCEn(0) <= '1'; 
+	else RdCRCEn(0) <= '0'; 
+	end if;
+
+	CommaDL(0)(0) <= Rx_IsComma(0)(0);
+	CommaDL(0)(1) <= CommaDL(0)(0);
+
+-- Hold reframe until a vaild pad character set is decoded
+	if InvalidChar(0) = "00" and CommaDL(0) = 1 then Reframe(0) <= '0';
+	elsif InvalidChar(0) /= "00" then Reframe(0) <= '1';
+	else Reframe(0) <= Reframe(0);
+	end if;
+
+	UsrRDDL(0)(0) <= not uCRD and not CpldCS;
+	UsrRDDL(0)(1) <= UsrRDDL(0)(0);
+
+	
+---------------------------------------------------------------------------
+--	Idle,Read_Type,Check_Seq_No,Wrt_uC_Queue,Wrt_FPGA_Queue,SendHeartBeat,Check_CRC
+---------------------------------------------------------------------------
+
+Case Packet_Parser is
+	when Idle =>
+	 if GTPRxBuff_Emtpy(0) = '0' then Packet_Parser <= Check_Seq_No;
+	 else Packet_Parser <= Idle;
+	 end if;
+	when Check_Seq_No => 
+		if GTPRxBuff_Out(0)(4 downto 0) = 2 
+		 then Packet_Parser <= Wrt_FPGA_Queue;
+		else Packet_Parser <= Wrt_uC_Queue;
+		end if;
+	when Wrt_FPGA_Queue => 
+		if WrtCount(0) = 0 then Packet_Parser <= Check_CRC;
+		else Packet_Parser <= Wrt_FPGA_Queue;
+		end if;
+	when Wrt_uC_Queue => 
+		if WrtCount(0) = 0 then Packet_Parser <= Check_CRC;
+		else Packet_Parser <= Wrt_uC_Queue;
+		end if;
+	when Check_CRC => Packet_Parser <= Idle;
+	when others => Packet_Parser <= Idle;
+end Case;
+
+if Packet_Parser = Check_Seq_No and GTPRxBuff_Out(0)(7 downto 5) /= RxSeqNo(0)
+  then RxSeqNoErr(0) <= '1';
+ elsif GTPRst = '1' then RxSeqNoErr(0) <= '0';
+ end if;
+
+
 end if; -- CpldRst
 
 end process;
@@ -1524,7 +1566,7 @@ port map (
 -- Extract the eight payload bits from the 10 bit parallel data fron the deserializer
 -- Three lower bits from lane 1 and 5 bits from lane 0
 LinkBuff : LinkFIFO
-  port map (rst => LinkBuffRst, wr_clk => RxOutClk(i), rd_clk => UsrClk2(0), 
+  port map (rst => LinkBuffRst, wr_clk => RxOutClk(i), rd_clk => EthClk, 
     wr_en => LinkFIFOWrReq(i),rd_en => LinkFIFORdReq(i),
     din(15 downto 13) => LinkPDat(i)(1)(7 downto 5),
     din(12 downto 8) => LinkPDat(i)(0)(9 downto 5),
@@ -1698,28 +1740,37 @@ EthProc : process(EthClk, CpldRst)
 -- Strobe timing delay chains
 -- Write strobe timer
 	if ZEthClk = '1' then
-	 EthWRDL(0) <= not EthCS and not uCWR;
-	 EthWRDL(1) <= EthWRDL(0);
-	 EthWRDL(2) <= EthWRDL(1);
-	 EthWRDL(3) <= EthWRDL(2);
-	 EthWRDL(4) <= EthWRDL(3);
+	  if OTAccess /= Data 
+	    then EthWRDL(0) <= not EthCS and not uCWR;
+	    else EthWRDL(0) <=not EthCS and HasOTTransmitData;
+     end if;
+	  EthWRDL(1) <= EthWRDL(0);
+	  EthWRDL(2) <= EthWRDL(1);
+	  EthWRDL(3) <= EthWRDL(2);
+	  EthWRDL(4) <= EthWRDL(3);
 	else EthWRDL <= EthWRDL;
 	end if; 
 
 -- Read strobe timer
 	if ZEthClk = '1' then
-	 EthRDDL(0) <= not EthCS and not uCRD;
-	 EthRDDL(1) <= EthRDDL(0);
-	 EthRDDL(2) <= EthRDDL(1);
-	 EthRDDL(3) <= EthRDDL(2);
-	 EthRDDL(4) <= EthRDDL(3);
+	  if OTAccess /= Data
+	    then EthRDDL(0) <= not EthCS and not uCRD;
+	    else EthRDDL(0) <= '0';
+	  end if;
+	  EthRDDL(1) <= EthRDDL(0);
+	  EthRDDL(2) <= EthRDDL(1);
+	  EthRDDL(3) <= EthRDDL(2);
+	  EthRDDL(4) <= EthRDDL(3);
 	else EthRDDL <= EthRDDL;
 	end if; 
 
  -- Write data pipeline
-if EthCS = '0' and uCWR = '0' then DQWrtDly(0) <= uCD;
+if EthCS = '0' and uCWR = '0' and OTAccess /= Data
+ then DQWrtDly(0) <= uCD;
+elsif OTAccess = Data and HasOTTransmitData = '1'
+ then DQwrtDLY(0) <= OTTransmitData;
  else DQWrtDly(0) <= DQWrtDly(0);
- end if;
+end if;
  
  if ZEthClk = '1' then 
 		DQWrtDly(1) <= DQWrtDly(0);
@@ -2693,7 +2744,7 @@ iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel
 
 -- Select between the Orange Tree port and the rest of the registers
 uCD <= iCD when uCRd = '0' and CpldCS = '0' and uCA(11 downto 10) = GA 
-		 else iDQ when uCRd = '0' and EthCS = '0'  
+		 else iDQ when uCRd = '0' and EthCS = '0' and OTAccess /= Data
 		 else (others => 'Z');
 
 end behavioural;
