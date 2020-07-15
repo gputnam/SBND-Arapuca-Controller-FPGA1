@@ -78,7 +78,7 @@ constant FreqRegAdHi : AddrPtr  := "00" & X"3A";
 constant FreqRegAdLo : AddrPtr  := "00" & X"3B";
 
 -- heartbeat control register
-
+-- DG: register to control heart-beat period when internal timing is on
 constant HeartBeatFreqRegAdHi : AddrPtr := "00" & X"3C";
 constant HeartBeatFreqRegAdLo : AddrPtr := "00" & X"3D";
 
@@ -105,6 +105,18 @@ constant MarkerBitsAd : AddrPtr  := "00" & X"77";
 -- DG: register for reading back external trigger information
 -- TODO: document all added registers for the micro-controller to access
 constant ExternalTriggerInfoAddress : AddrPtr := "00" & X"78";
+
+-- DG: register for controlling external triggering stuff
+constant ExternalTriggerControlAddress : AddrPtr := "00" & X"79";
+
+-- DG: register for controlling microbunch period
+constant PeriodicMicrobunchPeriodAddrHi : AddrPtr := "00" & X"7A";
+constant PeriodicMicrobunchPeriodAddrLo : AddrPtr := "00" & X"7B";
+
+constant ExternalTriggerInhibitAddrHi : AddrPtr := "00" & X"7C";
+constant ExternalTriggerInhibitAddrMd : AddrPtr := "00" & X"7D";
+constant ExternalTriggerInhibitAddrLo : AddrPtr := "00" & X"7E";
+
 
 ---------------------- Broadcast addresses ------------------------------
 
@@ -452,5 +464,21 @@ component FM_Rx is
 	      Data : buffer std_logic_vector (Pwidth - 1 downto 0);
 	      Rx_Out : buffer RxOutRec);
 end component;
+
+-- DG: Fifo for communicating between external trigger and packet maker
+	COMPONENT ExtTrigToFiber
+	PORT(
+		rst : IN std_logic;
+		wr_clk : IN std_logic;
+		rd_clk : IN std_logic;
+		din : IN std_logic_vector(47 downto 0);
+		wr_en : IN std_logic;
+		rd_en : IN std_logic;          
+		dout : OUT std_logic_vector(47 downto 0);
+		full : OUT std_logic;
+		empty : OUT std_logic;
+		rd_data_count : OUT std_logic_vector(8 downto 0)
+		);
+	END COMPONENT;
 
 end Project_Defs;

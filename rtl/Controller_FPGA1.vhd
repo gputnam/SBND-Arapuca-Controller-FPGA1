@@ -131,9 +131,17 @@ signal GateCounter, TurnOnTime, TurnOffTime : std_logic_vector (8 downto 0);
 signal TrigEn,TstTrigEn,TstTrigCE,Spill_Req,Beam_On,Seq_Busy : std_logic; 
 
 signal TstPlsEn,TstPlsEnReq,SS_FR,IntTrig,ExtTrig,IntTmgEn,TmgCntEn: std_logic;
+-- DG: signal to determine whether to increment Microbunch number periodically
+-- 	 or in response to an external trigger
+signal PeriodicMicroBunch: std_logic;
 
 -- DG: more trigger/timing signals
 signal COUNTRESET, MANTRIG : std_logic;
+
+-- DG: External trigger inhibit
+signal ExtTriggerInhibit : std_logic_vector (47 downto 0);
+signal ExtTriggerInhibitCount : std_logic_vector (47 downto 0);
+
 
 signal SpillWidth,InterSpill,InterSpillCount : std_logic_vector (7 downto 0);
 
@@ -271,9 +279,14 @@ signal TrigReqWdCnt,DCSReqWdCnt : std_logic_vector (3 downto 0);
 signal TrgPktRdCnt : std_logic_vector (10 downto 0);
 
 -- Time stamp FIFO
-signal TStmpBuff_Out : std_logic_vector (15 downto 0); 
-signal TStmpBuff_wr_en,TStmpBuff_rd_en,TStmpBuff_Full,TStmpBuff_Emtpy : std_logic;
+signal TStmpBuff_Out : std_logic_vector (47 downto 0); -- DG: change from 16 bits to 48
+signal TStmpBuff_wr_en,TStmpBuff_rd_en,TStmpBuff_Full,TStmpBuff_Empty : std_logic;
 signal TStmpWds : std_logic_vector (8 downto 0); 
+
+-- DG: External Trigger TimeStamp FIFO:
+signal ExtTrigTStampBuff_Out : std_logic_vector(47 downto 0);
+signal ExtTrigTStampBuff_wr_en, ExtTrigTStampBuff_rd_en, ExtTrigTStampBuff_Full, ExtTrigTStampBuff_Empty : std_logic;
+signal ExtTrigTStampBuffWds : std_logic_vector(8 downto 0);
 
 -- DCS request FIFO
 signal DCSTxBuff_wr_en,DCSTxBuff_rd_en,DCSTxBuff_Full,DCSTxBuff_Emtpy : std_logic;
@@ -316,23 +329,46 @@ signal PunchBits : std_logic_vector (3 downto 0);
 
 -- DG: EXTERNAL TRIGGER SIGNALS --
 signal NimTrigCount: std_logic_vector(15 downto 0);
-signal BadTrig: std_logic_vector(15 downto 0);
 signal NimTrigBUF: std_logic_vector (1 downto 0);
-signal NimTrigOLD: std_logic;
+-- signal NimTrigOLD: std_logic;
 
-signal DReqEventCount: integer range 0 to 10;
+-- DG: signals to recognize external PPS (on GPI input)
+-- signal ExtPPSHold: std_logic;
+signal ExtPPSBUF: std_logic_vector(1 downto 0);
 
+-- signals for enabling sending heart-beats
+signal HrtBtTxEnExtTrig: std_logic;
+signal HrtBtTxEnPeriodic: std_logic;
+
+-- signals for periodic generation of Microbunch counts
+signal PeriodicMicrobunchCount: std_logic_vector(31 downto 0);
+signal PeriodicMicrobunchPeriod: std_logic_vector(31 downto 0);
+
+-- (more) DG: signals for generation of trigger time stamps
+signal TriggerTimeStampCount: std_logic_vector(47 downto 0);
+signal DoTriggerTimeStampExtReset: std_logic;
+
+-- DG: signals for determining  trigger type
+signal TriggerTypeGatePeriod: std_logic_vector(5 downto 0);
+signal TriggerTypeGateCount: std_logic_vector(5 downto 0);
+Type TriggerVariant is (TriggerVariantBeamOn, TriggerVariantBeamOff);
+signal TriggerType: TriggerVariant;
+
+-- when to issue trigger
+signal IssueExtNimTrigger: std_logic;
+
+signal ClkDiv2: std_logic;
 
 begin
 -- DG: debug stuff
-Debug(1) <= NimTrig;
-Debug(2) <= NimTrigOLD;
-Debug(3) <= NimTrigBUF(0);
-Debug(4) <= NimTrigBUF(1);
-Debug(5) <= NimTrigCount(0);
-Debug(6) <= NimTrigCount(1);
-Debug(7) <= Trig_Tx_Req;
-Debug(8) <= Trig_Tx_Ack;
+Debug(1) <= ClkDiv2;
+Debug(2) <= '1' when NimTrigBUF = 1 else '0';
+Debug(3) <= '1' when TriggerTypeGateCount  = 1 else  '0';
+Debug(4) <= IssueExtNimTrigger;
+Debug(5) <= HrtBtTxEn;
+Debug(6) <= ExtPPSBuf(1);
+Debug(7) <= '1' when TriggerTimeStampCount = 0 else '0';
+Debug(8) <= '1' when ExtTriggerInhibitCount /= 0 else '0';
 
    BunchClkIn : IDDR2
    generic map(
@@ -373,7 +409,7 @@ Sys_Pll : SysPll
     LOCKED => Pll_Locked);
 
 HrtBtData(19 downto 0) <= MicrobunchCount(19 downto 0);
-HrtBtData(20) <= Beam_On;
+HrtBtData(20) <= '1' when TriggerType = TriggerVariantBeamOn else '0';
 HrtBtData(21) <= '0' when MicrobunchCount(31 downto 20) = 0 else '1';
 HrtBtData(23 downto 22) <= "00";
 -- FM transmitter for boadcasting microbunch numbers to the FEBs
@@ -385,6 +421,9 @@ HeartBeatTx : FM_Tx
 					 Data => HrtBtData, 
 					 Tx_Out => HrtBtTxOuts);
 HeartBeatFM <= HrtBtTxOuts.FM when ExtTmg = '0' else GPI;
+-- DG: MUX to handle whether HrtBtTxEn is set periodically or by external trigger
+HrtBtTxEn <= HrtBtTxEnPeriodic when PeriodicMicrobunch = '1'
+					else HrtBtTxEnExtTrig;
 
 -- FM transmitter for data requests 
 DReqTx : FM_Tx
@@ -437,17 +476,34 @@ DCSPktBuff : LinkFIFO
     empty => DCSTxBuff_Emtpy,
 	 rd_data_count => DCSPktRdCnt);
 
+-- DG: change FIFO type b.c. now TimeStamps are generated
+-- 	 in response to external triggers (on Sysclk) and are
+--     read back by Packet_Former (on UserClk2(0))
 -- Queue up time stamps for later checking
-TimeStampBuff : TrigPktBuff
+TimeStampBuff : ExtTrigToFiber
   PORT MAP (rst => GTPRxRst,
-    clk => UsrClk2(0),
-    din => GTPRxReg(0),
+    wr_clk => SysClk, -- Clock for recognizing external trigger
+	 rd_clk => UsrClk2(0), -- Clock for sending data over fiber
+    din => MicrobunchCount, -- DG: change to take in Microbunchcount
     wr_en => TStmpBuff_wr_en,
     rd_en => TStmpBuff_rd_en,
     dout => TStmpBuff_Out,
     full => TStmpBuff_Full,
-    empty => TStmpBuff_Emtpy,
-	 data_count => TStmpWds);
+    empty => TStmpBuff_Empty,
+	 rd_data_count => TStmpWds);
+	 
+-- Save External Trigger TimeStamp
+ExtTrigTimeStampBuff : ExtTrigToFiber
+	PORT MAP (rst => GTPRxRst,
+	wr_clk => SysClk,
+	rd_clk => UsrClk2(0),
+	din => TriggerTimeStampCount,
+	wr_en => ExtTrigTStampBuff_wr_en,
+	rd_en => ExtTrigTStampBuff_rd_en,
+	dout => ExtTrigTStampBuff_Out,
+	full => ExtTrigTStampBuff_Full,
+	empty => ExtTrigTStampBuff_Empty,
+	rd_data_count => ExtTrigTSTampBuffWds);
 
 -- DP Ram for storing FEB addresses
 FEBIDList : FEBIDListRam
@@ -656,8 +712,12 @@ begin
 	LinkFIFORdReq <= (others =>'0'); StatOr <= X"00"; 
 	EvTxWdCnt <= (others => '0'); EvTxWdCntTC <= '0'; EventBuff_RdEn <= '0';
 	FIFOCount <= (others => (others => '0')); EventBuff_WrtEn <= '0';
-	TStmpBuff_wr_en <= '0'; TStmpBuff_rd_en <= '0'; EvBuffWrtGate <= '0';
-	TStmpBuff_Full <= '0'; TStmpBuff_Emtpy <= '0';
+	-- DG: reset external trigger timing buff rd en
+	ExtTrigTStampBuff_rd_en <= '0';
+	-- DG: move TStmpBuff_wr_en to SysClk
+	TStmpBuff_rd_en <= '0'; EvBuffWrtGate <= '0';
+	-- TStmpBuff_Full <= '0'; TStmpBuff_Empty <= '0';
+	-- ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
 	TxPkCnt <= (others => '0'); Pkt_Timer <= X"0";
 	EmptyLatch <= "000"; En_PRBS(0) <= "000";
 	FormStatReg <= "000"; GTPRxBuff_wr_en(0) <= '0'; 
@@ -728,10 +788,16 @@ elsif rising_edge (UsrClk2(0)) then
 			Case Pkt_Timer is
 			 When X"A" => GTPTxStage(0) <= X"1C" & TxSeqNo(0) & "00101"; TxCRCDat(0) <= X"0000";
 			 When X"8" => GTPTxStage(0) <= X"8050"; TxCRCDat(0) <= X"8050";
-			 When X"7" => GTPTxStage(0) <= "00000" & TxPkCnt; TxCRCDat(0) <= "00000" & TxPkCnt;  
-			 When X"6" => GTPTxStage(0) <= TStmpBuff_Out; TxCRCDat(0) <= TStmpBuff_Out;
-			 When X"5" => GTPTxStage(0) <= TStmpBuff_Out; TxCRCDat(0) <= TStmpBuff_Out;
-			 When X"4" => GTPTxStage(0) <= TStmpBuff_Out; TxCRCDat(0) <= TStmpBuff_Out;
+			 When X"7" => GTPTxStage(0) <= "00000" & TxPkCnt; TxCRCDat(0) <= "00000" & TxPkCnt;
+			 -- DG: change TStmpBuff from 16bits wide to 48 bits wide
+			 -- DG: TODO: is this the correct endian-ness?
+			 When X"6" => GTPTxStage(0) <= TStmpBuff_Out(15 downto  0); TxCRCDat(0) <= TStmpBuff_Out(15 downto  0);
+			 When X"5" => GTPTxStage(0) <= TStmpBuff_Out(31 downto 16); TxCRCDat(0) <= TStmpBuff_Out(31 downto 16);
+			 When X"4" => GTPTxStage(0) <= TStmpBuff_Out(47 downto 32); TxCRCDat(0) <= TStmpBuff_Out(47 downto 32);
+			 -- DG: use two of the "buffer" words to include the trigger time
+			 -- only save the low two words -- TODO: is this sufficient?
+			 When X"3" => GTPTxStage(0) <= ExtTrigTStampBuff_Out(15 downto  0); TxCRCDat(0) <= ExtTrigTStampBuff_Out(15 downto  0);
+			 When X"2" => GTPTxStage(0) <= ExtTrigTStampBuff_Out(31 downto 16); TxCRCDat(0) <= ExtTrigTStampBuff_Out(31 downto 16);
 			 When X"0" => GTPTxStage(0) <= X"BC3C"; TxCRCDat(0) <= X"0000";
 			 When others => GTPTxStage(0) <= X"0000"; TxCRCDat(0) <= X"0000";
 	      end case;
@@ -831,17 +897,14 @@ elsif rising_edge (UsrClk2(0)) then
 	else LinkFIFOStatReg <= LinkFIFOStatReg;
 	end if;
 
--- DG: TODO:
-	-- Set timestamp buffer write enable back on????
-	-- Is this buffer avilable for use as a way to generate timestamps
-	-- internally?
-
--- Store the time stamp subfield from the trigger request packet for later checking
-	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" 
-	and TrigReqWdCnt >= 5 and TrigReqWdCnt <= 7 	
-	then TStmpBuff_wr_en <= '0'; --DANIEL, WAS 1
-	else TStmpBuff_wr_en <= '0';
-	end if;
+-- DG: Turn off setting TStmpBuff_wr_en on reception of a Data Request packet.
+-- 	 This is now done by the Ext Trig code
+-- -- Store the time stamp subfield from the trigger request packet for later checking
+--	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" 
+--	and TrigReqWdCnt >= 5 and TrigReqWdCnt <= 7 	
+--	then TStmpBuff_wr_en <= '1';
+--	else TStmpBuff_wr_en <= '0';
+--	end if;
 
 	LinkRDDL(0) <= not CpldCS and not uCRD;
 	LinkRDDL(1) <= LinkRDDL(0);
@@ -883,7 +946,7 @@ if Packet_Parser = Check_Seq_No and GTPRxBuff_Out(0)(7 downto 5) /= RxSeqNo(0)
 ---------------------------------------------------------------------------
 Case Event_Builder is
 	when Idle => --Debug(10 downto 7) <= X"0";
-		if LinkFIFOEmpty /= 7 and FormHold = '0' -- DG: TODO: turn this back on if timestamps on? -- and TStmpWds >= 3 
+		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpBuff_Empty = '0' --DG: used  to check if TStmpWds >= 3. Now  the whole timestamp is only in one word, so we only need to check if the buffer has data 
 		 then Event_Builder <= WaitEvent;
 		else Event_Builder <= Idle;
 		end if;
@@ -1141,11 +1204,26 @@ end if;
 	else EvTxWdCntTC <= EvTxWdCntTC;
 	end if;
 
+-- DG: change TStmpBuff setup
+-- 
+-- Before, TStmpBuff was 16bits wide and so neded to be read 3 times to get
+-- the full 48bit Timestamp. Now it is 48 bits, so it only needs to be read once
+
 -- Read of timestamps for use in forming the header packet
- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5)
+
+-- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5) -- DG: OLD
+if (Packet_Former = WrtHdrPkt and Pkt_Timer = 7) -- DG: NEW 
 	then TStmpBuff_rd_en <= '1';
 	else TStmpBuff_rd_en <= '0';
-	end if;
+end if;
+
+-- DG: also read the trigger time stamp FIFO
+if (Packet_Former = WrtHdrPkt and Pkt_Timer = 4)
+	then ExtTrigTStampBuff_rd_en <= '1';
+	else ExtTrigTStampBuff_rd_en <= '0';
+end if;
+
+-- Also read trigger time stamp for 
 
 -- Increment the data request counter when forming the header packet.
 if Packet_Former = WrtHdrPkt and Pkt_Timer = 9 then DReq_Count <= DReq_Count + 1;
@@ -1225,25 +1303,20 @@ begin
    TxCRCEn(1) <= '0'; TxCRCDat(1) <= X"0000";
 	PRBSCntRst(1) <= '0';
 	En_PRBS(1) <= "000"; Trig_Tx_Ack <= '0';
-	IntTrigSeq <= Idle; MicrobunchCount <= (others => '0');
-	
+	IntTrigSeq <= Idle; 
 elsif rising_edge (SysClk) then
 
 
 -- DG: TODO: is Req/Ack necessary?
 -- Request/Acknowledge to cross clock domains
 	Trig_Tx_Ack  <= Trig_Tx_Req;
-	if Trig_Tx_Ack = '1' then DReqEventCount <= 5;
-	else DReqEventCount <= DReqEventCount;
-	end if;
-
 
 -- State machine for sending trigger requests from internal trigger generator
 -- Idle,SendTrigHdr,SendPktType,SendPad0,SenduBunch0,SenduBunch1,
 --	SenduBunch2,SendPad1,SendPad2,SendPad3,SendCRC
 Case IntTrigSeq is
 	when Idle =>
-	  if DReqEventCount /= 0 then IntTrigSeq <= SendTrigHdr;
+	  if Trig_Tx_Ack = '1' then IntTrigSeq <= SendTrigHdr;
 	  else IntTrigSeq <= Idle;
 	  end if;
 	when SendTrigHdr => IntTrigSeq <= SendPad0;
@@ -1256,7 +1329,7 @@ Case IntTrigSeq is
 	when SendPad2 => IntTrigSeq <= SendPad3;
 	when SendPad3 => IntTrigSeq <= WaitCRC; 
 	when WaitCRC => IntTrigSeq <= SendCRC;
-	when SendCRC => IntTrigSeq <= Idle; MicrobunchCount <= MicrobunchCount + 1; DReqEventCount <= DReqEventCount - 1;
+	when SendCRC => IntTrigSeq <= Idle;
 	when others => IntTrigSeq <= Idle;  
 	-- DG: TODO: is this necessary?
 	DReqBuff_wr_en <= '0';
@@ -1723,7 +1796,14 @@ main : process(SysClk, CpldRst)
 	Counter1us <= X"00"; Counter1ms <= (others => '0');
 	SuperCycleCount <= (others => '0'); SpillWidthCount <= (others => '0');
 	InterSpillCount <= (others => '0'); 
-	HrtBtTxEn <= '0'; --MicrobunchCount <= (others => '0'); 
+	-- DG: No longer reset HrtBt enable -- the two input signals instead are reset
+	-- HrtBtTxEn <= '0'; 
+	MicrobunchCount <= (others => '0'); 
+	-- DG: reset External Trigger Inhibit
+	ExtTriggerInhibit <= (others => '0');
+	ExtTriggerInhibitCount <= (others => '0');
+	PeriodicMicrobunchCount <= (others => '0');
+	PeriodicMicrobunchPeriod <= (others => '0');
 	DRFreq <= (others => '0'); -- Delivery ring DDS
 	Int_uBunch <= "00"; -- Rising edge of DDS terminal count
 	DRCount <= (others => '0'); -- Delivery ring bunch counter
@@ -1756,11 +1836,32 @@ main : process(SysClk, CpldRst)
 	Trig_Tx_Req <= '0'; Trig_Tx_ReqD <= '0';
 	
 -- DG: reset external timing stuff
+	PeriodicMicrobunch <= '0';
 	NimTrigCount <= (others => '0');
-	BadTrig <= (others => '0');
 	COUNTRESET <= '0';
 	MANTRIG <= '0';
+	
+-- DG: reset Write-end of Ext Trg -> Fiber FIFO's
+	TStmpBuff_wr_en <= '0';
+	ExtTrigTStampBuff_wr_en <= '0';
+	
+	HrtBtTxEnPeriodic <= '0';
+	HrtBtTxEnExtTrig <= '0';
+	
+	TriggerTimeStampCount <= (others => '0');
+	DoTriggerTimeStampExtReset <= '0';
+	
+-- DG: trigger gate signals
+	TriggerTypeGatePeriod <= (others => '0');
+	TriggerTypeGateCount <= (others => '0');
+	TriggerType <= TriggerVariantBeamOff;
+	IssueExtNimTrigger <= '0';
+	
+	ClkDiv2 <= '0';
+	
  elsif rising_edge (SysClk) then 
+ 
+ ClkDiv2 <= not ClkDiv2;
 
 -- Synchronous edge detectors for read and write strobes
 RDDL(0) <= not uCRD and not CpldCS;
@@ -1878,7 +1979,6 @@ if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr
   else DReqBrstCounter <= DReqBrstCounter;
   end if;
 
-
 -- DG: turns off internally generated heartbeats
 -- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
 --if TstTrigEn = '1' and IntTmgEn = '1' and Int_uBunch = 1 
@@ -1929,11 +2029,10 @@ elsif (Counter100us = Count100us and SuperCycleCount = SuperCycleLength) or IntT
 else SuperCycleCount <= SuperCycleCount;
 end if;
 
--- 4.72 MHz generator for  Mu2e
+-- X"0C154C98": generates a 4.72 MHz signal in Mu2e w/ a clock of 100MHz
+
 -- setable in general
-if IntTmgEn = '1' then DRFreq <= DRFreq + X"0C154C98";
---+ HeartBeatFreqReg;
---X"0C154C98";
+if IntTmgEn = '1' then DRFreq <= DRFreq + HeartBeatFreqReg;
 else DRFreq <= (others => '0');
 end if;
 
@@ -1949,7 +2048,7 @@ Int_uBunch(1) <= Int_uBunch(0);
 -- DG: turns off internally generated heartbeats
 -- DG: TODO -- configure whether heart beats are generated internally or w/ Data Request
 
--- DG: 
+-- DG: TODO: what is the DRCount?
 
 --if IntTmgEn = '1' and 
 --   Int_uBunch = 1 and not((Beam_On = '1' and DRCount = 7) or DRCount = 143)
@@ -1959,26 +2058,33 @@ Int_uBunch(1) <= Int_uBunch(0);
 --else DRCount <= DRCount;
 --end if;
 
--- DG: turns off internal incrementing od Microbunch numbers
+-- set the periodic microbunch period / count
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = PeriodicMicrobunchPeriodAddrHi
+then PeriodicMicrobunchPeriod(31 downto 16) <= uCD;
+elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = PeriodicMicrobunchPeriodAddrLo
+then PeriodicMicrobunchPeriod(15 downto 0) <= uCD;
+else PeriodicMicrobunchPeriod <= PeriodicMicrobunchPeriod;
+end if;
 
--- Increment the microbunch number
---if IntTmgEn = '1' and 
---	Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
---then MicrobunchCount <= MicrobunchCount + 1;
---elsif IntTmgEn = '0'
---	then MicrobunchCount <= (others => '0');
---else MicrobunchCount <= MicrobunchCount;
---end if;
+if PeriodicMicrobunch = '1'
+then
+	if PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod /= PeriodicMicrobunchCount
+	then PeriodicMicrobunchCount <= PeriodicMicrobunchCount + 1;
+	else PeriodicMicrobunchCount <= (others => '0');
+	end if;
+else PeriodicMicrobunchCount <= (others => '0');
+end if;
 
 -- DG: turns off transmission of hearbeat messages on internal increment
 --     of Microbunch number
 
 -- Send a start transmit pulse to the FM transmitter at the beginning of 
 -- each microbunch
---if Int_uBunch = 1 and ((Beam_On = '1' and DRCount = 7) or DRCount = 143)
--- then HrtBtTxEn <= '1'; 
---else HrtBtTxEn <= '0';
---end if;
+if PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod = PeriodicMicrobunchCount
+	and IntTmgEn = '1' and PeriodicMicrobunch = '1'
+  then HrtBtTxEnPeriodic <= '1'; 
+  else HrtBtTxEnPeriodic <= '0';
+end if;
 
 if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = DReqBrstCntAd 
  then DReqBrstCntReg <= uCD;
@@ -2325,61 +2431,199 @@ if WrDL = 1 and uCA(9 downto 0) = TrigCtrlAddr and uCD(0) = '1'
  else  IntTrig <= IntTrig;
 end if;
 
+-- DG: TTL PPS logic
+
+-- use GPI input (ExtPPSBUF) as reset to trigger time counter
+if ExtPPSBUF = 1 and DoTriggerTimeStampExtReset = '1'
+	then
+		TriggerTimeStampCount <= (others => '0');
+	else
+		TriggerTimeStampCount <= TriggerTimeStampCount + 1;
+end if;
 
 -- DG: Nim-Trig logic
--- DG: todo -- make registers for reading/writing CSRRegAddr consistent
-if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr  and uCD(10)='1'
-then COUNTRESET <='1';
-else COUNTRESET <= COUNTRESET;
+-- Write to ExternalTriggerControl D0 to reset trigger count
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress and uCD(0)='1'
+	then COUNTRESET <='1';
+	else COUNTRESET <= '0';
 end if;
-if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr  and uCD(11)='1'
-then MANTRIG <='1';
-else MANTRIG <= MANTRIG;
+-- Write to ExternalTriggerControl D1 to manually trigger
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress  and uCD(1)='1'
+	then MANTRIG <='1';
+	else MANTRIG <= '0';
 end if;
+-- DG: D2 to set whether to make microbunch number generation periodic
+-- ignored if D0 or D1 are set
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress
+	and uCD(1 downto 0) = "00"
+	then PeriodicMicrobunch <= uCD(2);
+	else PeriodicMicrobunch <= PeriodicMicrobunch;
+end if;
+-- DG: D3 to set whether to reset TriggerTimeSTamp on external GPI pulse (PPS)
+-- ignored if D0 or D1 are set
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress
+	and uCD(1 downto 0) = "00"
+	then DoTriggerTimeStampExtReset <= uCD(3);
+	else DoTriggerTimeStampExtReset <= DoTriggerTimeStampExtReset;
+end if;
+-- DG: bits 4-9 set the trigger type gate
+-- ignored if D) or D1 are set
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerControlAddress
+	and uCD(1 downto 0) = "00"
+	then TriggerTypeGatePeriod <= uCD(9 downto 4);
+	else TriggerTypeGatePeriod <=  TriggerTypeGatePeriod;
+end if;
+	
 -- DG: TODO: add configuration if trigger signal is synchronous w.r.t. SysClk
 NimTrigBUF(0) <= NimTrig;
 NimTrigBUF(1) <= NimTrigBUF(0);
-if COUNTRESET = '1'
-then 	NimTrigCount <= (others => '0');
-		--MicrobunchCount <= (others => '0');
-		COUNTRESET <= '0';
-elsif (NimTrigBUF(1) = '0' and NimTrigOLD = '1') OR MANTRIG = '1'
+
+-- DG: input PPS
+-- ExtPPSHold <= GPI;
+ExtPPSBUF(0) <= GPI;
+ExtPPSBUF(1) <= ExtPPSBUF(0);
+
+-- Recognizing External NIM Trigger
+if ExtTriggerInhibitCount = 0 and
+	TriggerTypeGateCount = 0 and
+	COUNTRESET = '0' and
+	(NimTrigBuf = 2 or MANTRIG = '1')
 then
-	if IntTrigSeq = Idle and DReqEventCount = 0 then
-		NimTrigCount <= NimTrigCount + '1';
-		if IntTmgEn = '1' then
-			HrtBtTxEn <= '1'; 
-		else
-			HrtBtTxEn <= '0'; 
-		end if;
-		if TstTrigEn = '1' then
-			Trig_Tx_Req <= '1';
-		else
-			Trig_Tx_Req <= '0';
-		end if;
-	else
-		BadTrig <= BadTrig + '1';
-	end if;
-	MANTRIG <= '0';
-	--MicrobunchCount <= MicrobunchCount + 1;
+	-- begin the gate
+	TriggerTypeGateCount <= TriggerTypeGatePeriod;
+-- reset
+elsif COUNTRESET = '1'
+then
+	TriggerTypeGateCount <= (others => '0');
+-- countdown
+elsif TriggerTypeGateCount /= 0
+then
+	TriggerTypeGateCount <= TriggerTypeGateCount - 1;
 else
---	MicrobunchCount <= MicrobunchCount;
-	NimTrigCount <= NimTrigCount;
-	BadTrig <= BadTrig;
-	HrtBtTxEn <= '0';
-	Trig_Tx_Req <= Trig_Tx_Req;
-
-
+	TriggerTypeGateCount <= TriggerTypeGateCount;
 end if;
 
+-- set to issue trigger
+if COUNTRESET = '0' and (
+		-- Gate is enabled -- wait for the count to wind down
+		TriggerTypeGateCount = 1 or 
+		-- Gate is disabled -- edge detect external trigger
+		(TriggerTypeGatePeriod = 0 and ExtTriggerInhibitCount = 0 and (NimTrigBuf = 2 or MANTRIG = '1')))
+then
+	IssueExtNimTrigger <= '1';
+
+else
+	IssueExtNimTrigger <= '0';
+end if;
+
+-- determine the trigger variant when we issue the trigger
+if IssueExtNimTrigger = '1' and COUNTRESET = '0'
+then
+	-- not configured to check for on/off beam -- default to off beam
+	if TriggerTypeGatePeriod = 0
+		then TriggerType <= TriggerVariantBeamOff;
+	-- configured to check
+	-- if trigger is still active (active-lo) after gate time, beam ON
+	elsif NimTrigBuf(0) = '0'
+		then TriggerType <= TriggerVariantBeamOn;
+	-- if trigger is low, set to beam OFF
+	else TriggerType <= TriggerVariantBeamOff;
+	end if;
+else
+	TriggerType <= TriggerType;
+end if;
+
+-- Ready to issue the trigger
+if IssueExtNimTrigger = '1' and COUNTRESET = '0'
+then
+	NimTrigCount <= NimTrigCount + '1';
+	if IntTmgEn = '1' then
+		HrtBtTxEnExtTrig <= '1'; 
+	else
+		HrtBtTxEnExtTrig <= '0'; 
+	end if;
+	if TstTrigEn = '1' then
+		Trig_Tx_Req <= '1';
+	else
+		Trig_Tx_Req <= '0';
+	end if;
+else
+	if COUNTRESET = '1'
+		then NimTrigCount <= (others => '0');
+		else NimTrigCount <= NimTrigCount;
+	end if;
+	NimTrigCount <= NimTrigCount;
+	HrtBtTxEnExtTrig <= '0';
+	Trig_Tx_Req <= Trig_Tx_Req;
+end if;
 
 if Trig_Tx_Ack = '1'
 	then Trig_Tx_Req <= '0';
 end if;
 
+-- external trigger inhibit setting
+if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrLo
+then 
+	ExtTriggerInhibit(15 downto 0) <= uCD(15 downto 0);
+elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrMd
+then 
+	ExtTriggerInhibit(31 downto 16) <= uCD(15 downto 0);
+elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ExternalTriggerInhibitAddrHi
+	then 
+	ExtTriggerInhibit(47 downto 32) <= uCD(15 downto 0);
+else 
+	ExtTriggerInhibit <= ExtTriggerInhibit;
+end if;
 
+-- Count of the Inhibit -- if it is not zero, decrement
+if ExtTriggerInhibitCount /= 0
+	then 
+	ExtTriggerInhibitCount <= ExtTriggerInhibitCount - 1;
+-- if we see a trigger, reset the inhibit
+elsif NimTrigBuf = 2
+	then 
+	ExtTriggerInhibitCount <= ExtTriggerInhibit;
+else
+	ExtTriggerInhibitCount <= ExtTriggerInhibitCount;
+end if;
 
-NimTrigOLD <= NimTrigBUF(1);
+-- Increment the microbunch number
+-- 
+if 
+	-- whether controller should set microbunch
+	IntTmgEn = '1' and CountReset = '0' and 
+	-- if setting microbunch periodically
+	((PeriodicMicrobunch = '1' and PeriodicMicrobunchPeriod /= 0 and PeriodicMicrobunchPeriod = PeriodicMicrobunchCount)
+	-- if setting microbunch from external trigger
+	or (PeriodicMicrobunch = '0' and IssueExtNimTrigger = '1'))
+		then MicrobunchCount <= MicrobunchCount + 1;
+elsif CountReset = '1' or IntTmgEn = '0'
+then 
+		MicrobunchCount <= (others => '0');
+else
+		MicrobunchCount <= MicrobunchCount;
+end if;
+
+-- Save the trigger timestamp:
+if TstTrigEn = '1' and
+	-- This buffer should save the exact clock cycle where
+	-- the trigger  arrived, so don't  wait for "IssueExtNimTrigger" to be ready
+	ExtTriggerInhibitCount = 0 and
+	COUNTRESET = '0' and
+	(NimTrigBuf = 2 or MANTRIG = '1')
+then
+	ExtTrigTStampBuff_wr_en <= '1';
+else 
+	ExtTrigTStampBuff_wr_en <= '0';
+end if;
+-- Save the Microbunch Count:
+if TstTrigEn = '1' and
+	IssueExtNimTrigger = '1'
+then
+	TStmpBuff_wr_en <= '1';
+else
+	TStmpBuff_wr_en <= '0';
+end if;
 end if; --rising edge
 
 end process;
@@ -2439,6 +2683,12 @@ iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel
 		 X"00" & MarkerBits when MarkerBitsAd,
 		 -- DG: address to querry number of triggers
 		 COUNTRESET & NimTrigCount(14 downto 0) when ExternalTriggerInfoAddress,
+		 X"0" & "00" & TriggerTypeGatePeriod & DoTriggerTimeStampExtReset & PeriodicMicrobunch & "00" when ExternalTriggerControlAddress,
+		 PeriodicMicrobunchPeriod(31 downto 16) when PeriodicMicrobunchPeriodAddrHi,
+		 PeriodicMicrobunchPeriod(15 downto 0) when PeriodicMicrobunchPeriodAddrLo,
+		 ExtTriggerInhibit(47 downto 32) when ExternalTriggerInhibitAddrHi,
+		 ExtTriggerInhibit(31 downto 16) when ExternalTriggerInhibitAddrMd,
+		 ExtTriggerInhibit(15 downto 0) when ExternalTriggerInhibitAddrLo,
 		 X"0000" when others;
 
 -- Select between the Orange Tree port and the rest of the registers

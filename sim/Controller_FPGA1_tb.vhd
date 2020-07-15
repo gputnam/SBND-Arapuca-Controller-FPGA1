@@ -2269,6 +2269,8 @@ signal Clk53Mhz,Marker,Even_Odd,MarkerReq,Clk160Mhz : std_logic;
 signal BunchBits : std_logic_vector(3 downto 0); 
 signal BunchCount : std_logic_vector(2 downto 0); 
 
+-- signal PeriodicMicrobunch, IntTmgEn: std_logic;
+
 begin
 
 -- Instantiate the Unit Under Test (UUT)
@@ -2297,7 +2299,9 @@ uut: ControllerFPGA_1
 	ZEthWE => ZEthWE,ZEthClk => ZEthClk,
 	ZEthBE => ZEthBE,	ZEthEOF => ZEthEOF,
 	ZEthLen => ZEthLen, GPO => GPO,
-	GPI => GPI,NimTrig => NimTrig,Debug => Debug);
+	GPI => GPI,NimTrig => NimTrig,
+	-- PeriodicMicrobunch => PeriodicMicrobunch, IntTmgEn => IntTmgEn,
+	Debug => Debug);
 
 --TxCRCGEn : crc 
 -- port map( data_in => uCD,
@@ -2596,17 +2600,41 @@ end if;
 end process;
 
 
--- DG: process to simulate external trigger
+-- DG: external trigger process
 Trigger: process
 begin
-wait for 500 ns;
-NimTrig <= '1';
-wait for 20 ns;
 NimTrig <= '0';
-uCA <= "00" & ExternalTriggerInfoAddress;
-CpldCS <= '0';
-uCRd <= '0';
-wait;
+wait for 375 ns;
+-- send a trigger -- OFF beam
+NimTrig <= '1';
+wait for 25 ns;
+NimTrig <= '0';
+
+wait for 300 ns;
+
+
+-- send a trigger -- ON beam
+NimTrig <= '1';
+wait for 200 ns;
+NimTrig <= '0';
+
+wait for 300 ns;
+
+-- send a trigger -- ON beam
+NimTrig <= '1';
+wait for 200 ns;
+NimTrig <= '0';
+
+end process;
+
+-- DG: PPS process
+PPS: process
+begin
+GPI <= '0';
+wait for 1 us;
+GPI <= '1';
+wait for 100 ns;
+GPI <= '0';
 end process;
 
 
@@ -2689,7 +2717,9 @@ uCIO : process
 		  wait for 5 ns;
 		  CpldCS <= '0';
 		  wait for 5 ns;
-		  uCD <= X"0040";
+--		  uCD <= X"0040";
+			-- turns on IntTmgEn and TstTrigEn
+		  uCD <= X"0141";
 --		  uCD <= X"0303";
 		  uCWr <= '0';
 		  wait for 15 ns;
@@ -2699,7 +2729,115 @@ uCIO : process
 		  uCA <= (Others => 'Z');
 		  uCD <= (others => 'Z');
 		  wait for 10 ns;
+		  
+	wait for 200 ns;
+		  uCA <= "00" & ExternalTriggerControlAddress;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  -- Periodic Microbunch ON, reset Ext Trig timestamp ON, Pulse detect gate 15	
+		  uCD <= X"00FC";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+	wait for 50 ns;
+		  uCA <= "00" & PeriodicMicrobunchPeriodAddrLo;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"000F";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		  
+	-- turn external trigger generation of microbunches back on
+	wait for 500 ns;
+		  uCA <= "00" & ExternalTriggerControlAddress;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  -- Periodic Microbunch OFF, reset Ext Trig timestamp ON, Pulse detect gate 15	
+		  uCD <= X"00F8";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+	-- start inhibit triggers
+	wait for 100 ns;
+		uCA <= "00" & ExternalTriggerInhibitAddrLo;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"003C";
+		  uCWr <= '0';
+		  wait for 15 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		  
+	wait for 100 ns;
+			uCA <= "00" & PLLHiAddr;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0000";
+		  uCWr <= '0';
+		  wait for 25 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		  
+	wait for 50 ns;
+		  		uCA <= "00" & PLLLoAddr;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0008";
+		  uCWr <= '0';
+		  wait for 25 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		  
+	wait for 50 ns;
 
+		  		uCA <= "00" & PLLLoAddr;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 5 ns;
+		  uCD <= X"0051";
+		  uCWr <= '0';
+		  wait for 25 ns;
+		  uCWr <= '1';
+		  CpldCS <= '1';
+		  wait for 5 ns;
+		  uCA <= (Others => 'Z');
+		  uCD <= (others => 'Z');
+		  wait for 10 ns;	
+		
 --
 --	wait for 1 us;	
 
