@@ -77,7 +77,7 @@ ARCHITECTURE behavior OF Controller_FPGA1_tb IS
 -- Serial control lines for the RJ-45 LEDs
 	LEDSClk,LEDSDat : out std_logic_vector(2 downto 0);
 	LEDLd : out std_logic_vector(5 downto 0);
-	LEDRst : out std_logic;
+	LEDRst : buffer std_logic;
 -- Orange Tree Ethernet daughter card lines
 	DQ : inout std_logic_vector(15 downto 0);
 	ZEthA : buffer std_logic_vector(8 downto 0);
