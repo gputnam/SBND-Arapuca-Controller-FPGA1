@@ -1,0 +1,71 @@
+The git repository for the DAPHNE SBND X-ARAPUCA readout system has been simplified to only contain source files.  
+
+I recomend using git worktree to manage branches without having to frequently regenerate all cores, as the ip cores and generated files change between branches.
+
+*************************************************************
+
+To automatically setup the project, you can run a tcl script to automatically create an ise project and import all files.
+1. Source the ise toolchain. Ex:
+source /opt/Xilinx/14.7/ISE_DS/settings64.sh
+2. Run the rebuild script **from the CTRL_iseproj directory**
+xtclsh CTRL_iseproj.tcl rebuild_project
+2.a. Consider running 
+chmod -R 775 *
+in the root directory to fix permissions errors.
+3. Source the iseumich/fermi script to open ise.  In ISE, open the .xise project file created in the CTRL_iseproj directory.
+4. Run regenerate all cores
+
+
+*************************************************************
+
+To manually setup the project, clone the repository, and make a new ISE project inside the root directory.  The device specifications are:
+Top level source: HDL
+Evaluation Development Board: None specified
+Product Category: ALl
+Family: Spartan6
+Device: XC6SLX25T - Note this is subject to change if the FPGA changes to accomodate more memory.
+Package: FGG484
+Speed:-3
+
+Synthesis Tool: XST
+Simulator: Modelsim-DE Mixed recomended on Linux. Other modelsim editions for windows
+Preferred Language: VHDL
+Property SPeficication in Proect File: store all values
+Manual Compile order: unchecked
+VHDL source analysis standard VHDL-93
+Enable Message Filtering: unchecked
+
+Then Import all the files in the git directory and all subdirectories except the following: TODO
+
+Then, select the fpga in the design heararchy window and select regenerate all cores.
+
+Then you should be ready to synthesize and implement the design.
+
+**************************************************************
+
+To generate an exportable .bin file for upload to the board via the microcontroller, select the top level design in the hierarchy and select configure target device in the processes list. This will open impact.  You may already have an impact project with the correct settings. If not, create one with the following settings:
+Generic Parallel PROM
+PROM Size: 8M
+Compression: False
+Output Format: Bin (swap bits on)
+Swap bits: On
+Number of Revisions:1
+Revision 0 start address: 0
+Load Direction: UP
+Add non-configuration Data Files
+
+**************************************************************
+
+If Modelsim fails to open, ensure the licensing is correct.  The licensing at umich or fermilab should be done automatically if using the iseumich or isefermi scripts. Umich licensing should work on UMich-all traffic vpn (not umich only). Fermi licensing does not seem to work on vpn, and may be expired.
+Then, try running recompile simulation libraries.
+Finally, try checking the various modelsim.ini files.
+
+
+If you get errors when regenerating the PLL or other ip cores, see:
+
+https://wiki.archlinux.org/index.php/Xilinx_ISE_WebPACK#CORE_Generator_fails_to_generate_core
+
+(also available on the internet archive wayback machine).
+
+
+
