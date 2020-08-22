@@ -25,7 +25,7 @@ use UNISIM.vcomponents.all;
 use work.Project_defs.all;
 
 entity ControllerFPGA_1 is port(
-
+	CpldRst, CpldCS, uCRd, uCWr, EthCS : in std_logic;
 -- Orange Tree Ethernet daughter card lines
 	DQ : inout std_logic_vector(15 downto 0);
 	ZEthA : out std_logic_vector(8 downto 0);
@@ -126,6 +126,7 @@ end component;
 		  USER_FPGA_READ_MAIL1,
 		  USER_FPGA_WAIT1,
 		  USER_FPGA_WAIT2,
+		  USER_FPGA_WAIT3,
 		  USER_FPGA_READ_MAIL2
     );
     signal UserFPGAState : STATE_TYPE;
@@ -184,12 +185,12 @@ EthClk <= RefClk;
 --Debug(1) <= SysClk;
 --Debug(2) <= EthClk;
 --Debug(3) <= nEthClk;
-Debug(10 downto 7) <= (others => '0');
+--Debug(10 downto 7) <= (others => '0');
 Debug(6) <= ClkDiv2;
-    
+Debug(4 downto 1) <= UserReadData(3 downto 0);
     -- State machine to read/write Ethernet
-    process (RST, EthClk) begin
-        if (RST='1') then
+    process (CpldRst, EthClk) begin
+        if (CpldRst='0') then
             UserFPGAState <= USER_FPGA_DELAY_INIT;
             Delay <= (others=>'0');
             UserFPGASubState <= (others=>'0');
@@ -197,12 +198,12 @@ Debug(6) <= ClkDiv2;
             ConnectionState <= (others=>'0');
             InterruptStatus <= (others=>'0');
             FrameLength <= (others=>'0');
-            Clean <= '1';
+            Clean <= '0';
             RampData <= X"0001";
             WriteCount <= (others=>'0');
 				ClkDiv2 <= '0';
         elsif (EthClk'event and EthClk='1') then
-		  	 ClkDiv2 <= not ClkDiv2;
+				ClkDiv2 <= not ClkDiv2;
             -- Counter of completed register reads
             if (UserReadDataValid='1') then
                 UserValidCount <= UserValidCount + 1;
@@ -211,6 +212,10 @@ Debug(6) <= ClkDiv2;
             case UserFPGAState is
                 -- Power on startup delay until GigExpedite reports a valid IP address
                 when USER_FPGA_DELAY_INIT =>
+						  Debug(10 downto 7) <= "0000";
+						  --Debug(6 downto 5) <= Delay(1 downto 0);
+						  --Debug(4) <= UserReadDataValid;
+						  --Debug(3 downto 2) <= UserReadData(1 downto 0);
                     if (Delay=X"ffffff") then
                         if (UserReadDataValid='1' and UserReadData/=X"0000" and UserReadData/=X"ffff") then
                             UserFPGAState <= USER_FPGA_CLEAN;
@@ -225,6 +230,7 @@ Debug(6) <= ClkDiv2;
                 -- read the status for each connection in turn
                 -- Loop round until all statuses are zero.
                 when USER_FPGA_CLEAN =>
+						  Debug(10 downto 7) <= "0001";
                     UserFPGASubState <= UserFPGASubState + 1;
                     if (UserFPGASubState=X"000f") then
                         UserFPGASubState <= (others=>'0');
@@ -232,6 +238,7 @@ Debug(6) <= ClkDiv2;
                         Clean <= '1';
                     end if;
                 when USER_FPGA_CLEAN_CHECK =>
+						  Debug(10 downto 7) <= "0010";
                     UserFPGASubState <= UserFPGASubState + 1;
                     if (UserReadDataValid='1' and UserReadData/=X"0000") then
                         Clean <= '0';
@@ -252,6 +259,7 @@ Debug(6) <= ClkDiv2;
                 -- Configures one connection as a TCP server waiting
                 -- for a connection from a client (i.e. the host program)
                 when USER_FPGA_INIT => 
+						  Debug(10 downto 7) <= "0011";
                     UserFPGASubState <= UserFPGASubState + 1;
                     if (UserFPGASubState=X"0003") then
                         UserFPGAState <= USER_FPGA_IDLE;
@@ -259,6 +267,7 @@ Debug(6) <= ClkDiv2;
                 
                 -- Wait for interrupt from GigExpedite device
                 when USER_FPGA_IDLE =>
+						  Debug(10 downto 7) <= "0100";
                     UserFPGASubState <= (others=>'0');
                     UserValidCount <= (others=>'0');
                     if (UserInterrupt='1') then
@@ -268,6 +277,8 @@ Debug(6) <= ClkDiv2;
 
                 -- Check if the connection state has changed
                 when USER_FPGA_CHECK_STATE =>
+						  Debug(10 downto 7) <= "0101";
+
                     UserFPGASubState <= UserFPGASubState + 1;
                     if (UserReadDataValid='1' and UserValidCount=X"0000") then
                         -- Store the interrupt status bits
@@ -295,6 +306,8 @@ Debug(6) <= ClkDiv2;
 
                 -- Check if there is incoming data
                 when USER_FPGA_READ_LENGTH =>
+						  Debug(10 downto 7) <= "0110";
+
                     UserFPGASubState <= UserFPGASubState + 1;
                     if (UserReadDataValid='1' and UserValidCount=X"0000") then
                         -- Read frame length from GigExpedite
@@ -314,6 +327,7 @@ Debug(6) <= ClkDiv2;
                 
                 -- Read data from GigExpedite device
                 when USER_FPGA_READ_DATA =>
+						  Debug(10 downto 7) <= "0111";
                     UserFPGASubState <= UserFPGASubState + 1;
                     if (UserValidCount>=FrameLength) then
                         -- End of frame reached
@@ -326,6 +340,7 @@ Debug(6) <= ClkDiv2;
                 -- Check if there is space in the outgoing GigExpedite buffer
                 -- and we have data to send back to the host
                 when USER_FPGA_CHECK_SPACE =>
+						  Debug(10 downto 7) <= "1000";
                     UserFPGASubState <= UserFPGASubState + 1;
                     if (WriteCount=WRITE_LENGTH or
                         ConnectionState(3 downto 0)/=ESTABLISHED or
@@ -345,6 +360,8 @@ Debug(6) <= ClkDiv2;
 
                 -- Write 1kbyte of data to outgoing FIFO
                 when USER_FPGA_WRITE_DATA =>
+						  Debug(10 downto 7) <= "1001";
+
                     UserFPGASubState <= UserFPGASubState + 1;
                     RampData(7 downto 0) <= RampData(7 downto 0)+2;
                     RampData(15 downto 8) <= RampData(15 downto 8)+2;
@@ -356,16 +373,30 @@ Debug(6) <= ClkDiv2;
                         UserFPGAState <= USER_FPGA_READ_MAIL1;
                     end if;
 					  when USER_FPGA_READ_MAIL1 =>
+						  Debug(10 downto 7) <= "1010";
+
 								UserFPGAState <= USER_FPGA_WAIT1;
 					  when USER_FPGA_WAIT1 =>
+						  Debug(10 downto 7) <= "1011";
+								UserFPGAState <= USER_FPGA_WAIT3;
+					  when USER_FPGA_WAIT3 =>
+						  Debug(10 downto 7) <= "1111";
 								UserFPGAState <= USER_FPGA_WRITE_MAIL1;
 					  when USER_FPGA_WRITE_MAIL1 =>
+						  Debug(10 downto 7) <= "1100";
 								UserFPGAState <= USER_FPGA_WAIT2;
 					  when USER_FPGA_WAIT2 =>
+						  Debug(10 downto 7) <= "1101";
+						  if(UserReadDataValid='1') then
+
 								UserFPGAState <= USER_FPGA_WRITE_MAIL2;
+								end if;
+
 					  when USER_FPGA_WRITE_MAIL2 =>
+						  Debug(10 downto 7) <= "1110";
 								UserFPGAState <= USER_FPGA_IDLE;
-                when others => null;
+                when others => 
+						  Debug(10 downto 7) <= "1111";
             end case;
         end if;
     end process;
@@ -505,19 +536,17 @@ Debug(6) <= ClkDiv2;
                 UserWriteData <= (others=>'0');
 					 
             when USER_FPGA_WRITE_MAIL1 =>
-                -- Read from connection FIFO
 					 UserRE <= '0';
                 UserWE <= '1';
                 UserBE <= "11";
                 UserAddr <=  "1100000010";
-                UserWriteData <= X"FCFD";       
+                UserWriteData <= X"1234";       
 				 when USER_FPGA_WRITE_MAIL2 =>
-                -- Read from connection FIFO
 					 UserRE <= '0';
-                UserWE <= '0';
+                UserWE <= '1';
                 UserBE <= "11";
-                UserAddr <=  "0000000010";
-                UserWriteData <= X"FCFD";
+                UserAddr <=  "1100000010";
+                UserWriteData <= UserReadData;
 					 
                 
             when others =>
@@ -535,11 +564,11 @@ Debug(6) <= ClkDiv2;
     -- Instantiate GigEx interface physical layer
     GigExPhyInst : entity work.GigExPhy16 
         generic map (
-            CLOCK_RATE => 125000000
+            CLOCK_RATE => 104000000
         )
         port map (
             CLK => EthClk,
-				Debug => Debug(4 downto 1),
+				Debug => open,
 
             GigEx_Clk => ZEthClk,
             GigEx_nCS => ZEthCS,

@@ -91,3 +91,10 @@ NET "ZEthBE[0]" FAST;
 NET "ClkB_P" LOC = P3;
 TIMESPEC TS_ClkB_P = PERIOD "ClkB_P" 9.4 ns HIGH 50%;
 NET "ClkB_P" TNM_NET = "ClkB_P";
+
+
+NET "CpldCS" LOC = W15;
+NET "CpldRst" LOC = AB4;
+NET "CpldRst" PULLUP = TRUE;
+NET "uCRd" LOC = Y20;
+NET "uCWr" LOC = R7;
