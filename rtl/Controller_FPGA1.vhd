@@ -1,6 +1,7 @@
--- Firmware for apex FPGA
+-- Firmware for apex FPGA. SBND version
 
 -- Sten Hansen Fermilab 10/15/2015
+-- Daniel Mishins, Gray Putnam, Chris Barnes 2018-2020
 
 -- FPGA responsible for collecting data from three front end FPGAs
 -- Microcontroller interface, GBT transceiver interface to the DAQ
@@ -241,21 +242,21 @@ signal Rx1Dat : std_logic_vector(15 downto 0);
 signal RxOut : RxOutRec;
 
 -- Signals used by GTP transceivers
-Signal tile0_gtp0_refclk_i,tile0_gtp1_refclk_i,GTPRxRst : std_logic;
-Signal PllLkDtct,GTPRstDn,RxUsrClk,BuffOut_DCMIn,
-		 UsrClk2,UsrClk,TxDCMLock,Reframe : std_logic_vector (1 downto 0);
-signal RxLOS,GTPTxClk,Rx_IsComma,InvalidChar,GTPDisp,GTPSysClk,
-		 UsrWRDL,UsrRDDL,Rx_IsCtrl : Array_2x2;
-signal TxCharIsK,TxCharErr,CommaDL,CommaDL1 : Array_2x2;
-signal GTPTxStage,GTPTx,GTPRx,GTPRxReg,GTPRxBuff_Out : Array_2x16;
+--Signal tile0_gtp0_refclk_i,tile0_gtp1_refclk_i,GTPRxRst : std_logic;
+--Signal PllLkDtct,GTPRstDn,RxUsrClk,BuffOut_DCMIn,
+--		 UsrClk2,UsrClk,TxDCMLock,Reframe : std_logic_vector (1 downto 0);
+--signal RxLOS,GTPTxClk,Rx_IsComma,InvalidChar,GTPDisp,GTPSysClk,
+--		 UsrWRDL,UsrRDDL,Rx_IsCtrl : Array_2x2;
+signal TxCharIsK,TxCharErr : Array_2x2;
+--signal GTPTxStage,GTPTx,GTPRx,GTPRxReg,GTPRxBuff_Out : Array_2x16;
 
 -- Signals used by GTP Tx and Rx FIFOs
-signal DCM_Locked : std_logic_vector (1 downto 0);
+--signal DCM_Locked : std_logic_vector (1 downto 0);
 
-signal GTPRxBuff_wr_en,GTPRxBuff_rd_en,GTPRxBuff_full,
-		 GTPRxBuff_Emtpy,PRBSCntRst,PRBSErr : std_logic_vector (1 downto 0);
-signal EnPRBSTst,En_PRBS : Array_2x3;
-signal GTPRxBuff_RdCnt : Array_2x13;
+--signal GTPRxBuff_wr_en,GTPRxBuff_rd_en,GTPRxBuff_full,
+--		 GTPRxBuff_Emtpy,PRBSCntRst,PRBSErr : std_logic_vector (1 downto 0);
+--signal EnPRBSTst,En_PRBS : Array_2x3;
+--signal GTPRxBuff_RdCnt : Array_2x13;
 -- Signals used by the microbunch,trigger FM transmitters
 signal HrtBtTxOuts,DreqTxOuts : TxOutRec;
 signal HrtBtTxEn,DReqTxEn,LinkBusy : std_logic;
@@ -268,7 +269,7 @@ signal DReqBuff_Out : std_logic_vector (15 downto 0);
 signal DReqBuff_In : std_logic_vector (15 downto 0);
 signal DReqBuff_wr_en,DReqBuff_rd_en,DReqBuff_uCRd,
 		 DReqBuff_Full,TrigTx_Sel,DReqBuff_Emtpy,Trig_Tx_Req,
-		 Trig_Tx_Ack,BmOnTrigReq,Trig_Tx_ReqD,Stat_DReq : std_logic;
+		 Trig_Tx_Ack,BmOnTrigReq,Trig_Tx_ReqD : std_logic;
 signal LinkFIFOStatReg,Lower_FM_Bits : std_logic_vector (2 downto 0);  
 
 Type Trig_Tx_State is (Idle,SendTrigHdr,SendPad0,SendPktType,SenduBunch0,SenduBunch1,
@@ -289,10 +290,11 @@ signal ExtTrigTStampBuff_wr_en, ExtTrigTStampBuff_rd_en, ExtTrigTStampBuff_Full,
 signal ExtTrigTStampBuffWds : std_logic_vector(8 downto 0);
 
 -- DCS request FIFO
-signal DCSTxBuff_wr_en,DCSTxBuff_rd_en,DCSTxBuff_Full,DCSTxBuff_Emtpy : std_logic;
-signal DCSPktRdCnt : std_logic_vector (12 downto 0); 
-signal DCSTxBuff_Out : std_logic_vector (15 downto 0); 
-signal DCSTxBuffWds : std_logic_vector (8 downto 0); 
+-- DM was unused - removed
+--signal DCSTxBuff_wr_en,DCSTxBuff_rd_en,DCSTxBuff_Full,DCSTxBuff_Emtpy : std_logic;
+--signal DCSPktRdCnt : std_logic_vector (12 downto 0); 
+--signal DCSTxBuff_Out : std_logic_vector (15 downto 0); 
+--signal DCSTxBuffWds : std_logic_vector (8 downto 0); 
 
 -- FEB active register
 signal ActiveReg : std_logic_vector (23 downto 0);
@@ -356,7 +358,7 @@ signal TriggerType: TriggerVariant;
 
 -- when to issue trigger
 signal IssueExtNimTrigger: std_logic;
-
+signal NOTCpldRst:std_logic;
 signal ClkDiv2: std_logic;
 
 begin
@@ -389,11 +391,6 @@ Debug(8) <= '1' when ExtTriggerInhibitCount /= 0 else '0';
 
 
 TrigLED <= '0';
-
-GTPRst <= '1' when CpldRst = '0' 
-  	                or (CpldCS = '0' and uCWR = '0' and uCA = CSRRegAddr and uCD(3) = '1') else '0';
-GTPRxRst <= '1' when CpldRst = '0' 
-  	                or (CpldCS = '0' and uCWR = '0' and uCA = GTPFIFOAddr and uCD(0) = '1') else '0';
 
 Sys_Pll : SysPll
   port map(
@@ -438,7 +435,7 @@ TrigFM <= DreqTxOuts.FM when TrigTx_Sel = '1'
 
 DReqTxEn <= '1' when TrigTx_Sel = '1' and DReqBuff_Emtpy = '0' and DreqTxOuts.Done = '0' 
 					  else '0';
-
+NOTCpldRst <= CpldRst;
 -- DG: TODO: switch to configure DReqBuff source from external trigger/fiber
 --DReqBuff_In <= GTPRxReg(0)   -- TO USE FIBER LINK
 
@@ -446,9 +443,10 @@ DReqTxEn <= '1' when TrigTx_Sel = '1' and DReqBuff_Emtpy = '0' and DreqTxOuts.Do
 -- DG: TODO: figure out how to have buffer use different clocks
 
 -- FIFO for buffering broadcast trigger requests, 
--- crossing clock domains from UsrClk to Sysclk
+-- WAS crossing clock domains from UsrClk to Sysclk
+-- DG - Now dreqs come from triger on io port for SBND
 DReqBuff : FIFO_DC_1kx16
-  PORT MAP (rst => GTPRxRst,
+  PORT MAP (rst => NOTCpldRst,
     wr_clk => SysClk,
 	 rd_clk => SysClk,
     din => DReqBuff_In,
@@ -461,29 +459,15 @@ DReqBuff : FIFO_DC_1kx16
 
 DReqBuff_rd_en <= DreqTxOuts.Done when TrigTx_Sel = '1' else DReqBuff_uCRd;
 
--- DG: TODO -- where are status requests coming from?
-
--- FIFO for buffering status requests
-DCSPktBuff : LinkFIFO
-  PORT MAP (rst => GTPRxRst,
-	 wr_clk => SysClk,
-    rd_clk => SysClk,
-    din => DReqBuff_In,
-    wr_en => DCSTxBuff_wr_en,
-    rd_en => DCSTxBuff_rd_en,
-    dout => DCSTxBuff_Out,
-    full => DCSTxBuff_Full,
-    empty => DCSTxBuff_Emtpy,
-	 rd_data_count => DCSPktRdCnt);
 
 -- DG: change FIFO type b.c. now TimeStamps are generated
 -- 	 in response to external triggers (on Sysclk) and are
 --     read back by Packet_Former (on UserClk2(0))
 -- Queue up time stamps for later checking
 TimeStampBuff : ExtTrigToFiber
-  PORT MAP (rst => GTPRxRst,
+  PORT MAP (rst => NOTCpldRst,
     wr_clk => SysClk, -- Clock for recognizing external trigger
-	 rd_clk => UsrClk2(0), -- Clock for sending data over fiber
+	 rd_clk => EthClk, -- Clock for sending data over fiber
     din => MicrobunchCount, -- DG: change to take in Microbunchcount
     wr_en => TStmpBuff_wr_en,
     rd_en => TStmpBuff_rd_en,
@@ -494,9 +478,9 @@ TimeStampBuff : ExtTrigToFiber
 	 
 -- Save External Trigger TimeStamp
 ExtTrigTimeStampBuff : ExtTrigToFiber
-	PORT MAP (rst => GTPRxRst,
+	PORT MAP (rst => NOTCpldRst,
 	wr_clk => SysClk,
-	rd_clk => UsrClk2(0),
+	rd_clk => EthClk,
 	din => TriggerTimeStampCount,
 	wr_en => ExtTrigTStampBuff_wr_en,
 	rd_en => ExtTrigTStampBuff_rd_en,
@@ -517,7 +501,7 @@ FEBIDList : FEBIDListRam
     doutb => FEBID_doutb);
 
 EventBuff: FIFO_SC_4Kx16
-  port map (clk => UsrClk2(0),
+  port map (clk => EthClk,
 		rst => ResetHi,
 		wr_en => EventBuff_WrtEn,
 		rd_en => EventBuff_RdEn,
@@ -526,189 +510,30 @@ EventBuff: FIFO_SC_4Kx16
       full => EventBuff_Full,
 	   empty => EventBuff_Empty);
 
--- Generate two sets of logic for the two GTP sections
-GenGTP_Pairs : for i in 0 to 1 generate
 
 -- CRC generators for transmit data
+GenTxCRC : for i in 0 to 1 generate
 TxCRCGen : crc 
  port map(data_in => TxCRCDat(i),
-    crc_en => TxCRCEn(i), rst => TxCRCRst(i), clk => UsrClk2(i),
+    crc_en => TxCRCEn(i), rst => TxCRCRst(i), clk => EthClk,
     crc_out => TxCRC(i));
-
--- CRC generators for receive data CRC checking
-RxCRCGen : crc 
- port map( data_in => GTPRxReg(i),
-    crc_en => RdCRCEn(i), rst => RxCRCRstD(i), clk => UsrClk2(i),
-    crc_out => RxCRC(i));
-
--- GTP Receive data FIFOs
-GTPRxBuffs : LinkFIFO
-  PORT MAP (rst => GTPRxRst,
-    wr_clk => UsrClk2(i),
-    rd_clk => SysClk,
-    din => GTPRxReg(i),
-    wr_en => GTPRxBuff_wr_en(i),
-    rd_en => GTPRxBuff_rd_en(i),
-    dout => GTPRxBuff_Out(i),
-    full => GTPRxBuff_Full(i),
-    empty => GTPRxBuff_Emtpy(i),
-	 rd_data_count => GTPRxBuff_RdCnt(i));
-
--- To connect the GTPClkOut to the TxUSRClk and RxUSRClk you need a BUFIO2 
--- and a DCM, as an alternative to the IBUFF2 called for in the doc, since 
--- the IBUFF2 divide by 2 setting doesn't work. 
--- The DCM generated by the wizard has an input IBUFG as a default 
--- which must be deselected. In its place goes a separately instantiated BUFIO2
--- with the divide function bypassed
-
-GTPClkBuffs : BUFIO2
-generic map (DIVIDE => 1, DIVIDE_BYPASS => TRUE)
-port map (DIVCLK => BuffOut_DCMIn(i), 
-			 IOCLK => open, SERDESSTROBE => open, 
-			 I => GTPSysClk(i)(0)); 
-
-GTPTxDCMs : GTPClkDCM
-  port map
-   (-- Clock in ports
-    CLK_IN1 => BuffOut_DCMIn(i),
-    -- Clock out ports
-    CLK_OUT1 => UsrClk(i),
-    CLK_OUT2 => UsrClk2(i),
-    -- Status and control signals
-    RESET  => ResetHi,
-    LOCKED => DCM_Locked(i));
 
 end generate;
 
------------------------------ The GTP Wrapper -----------------------------
----------------------- Dedicated GTP Reference Clock Inputs ---------------
+-- WAS GTP logic processes
+-- NOW ETH logic Process
 
--- Each dedicated refclk will need its own IBUFDS instance
-
-    tile0_refclk_ibufds_0 : IBUFDS
-    port map
-    (O => tile0_gtp0_refclk_i,
-     I =>  GTPClk_P(0),    -- Connect to package pin A10
-     IB => GTPClk_N(0));  -- Connect to package pin B10
-
-    tile0_refclk_ibufds_1 : IBUFDS
-    port map
-    ( O => tile0_gtp1_refclk_i,
-      I =>  GTPClk_P(1),  -- Connect to package pin C11
-      IB => GTPClk_N(1)); -- Connect to package pin D11
-
-    GTP_Xcvr_i : GTP_Xcvr
-    generic map
-    (
-        WRAPPER_SIM_GTPRESET_SPEEDUP    =>      0,   -- Set this to 1 for simulation
-        WRAPPER_SIMULATION              =>      0    -- Set this to 1 for simulation
-    )
-    port map
-    (   --_____________________________________________________________________
-        --_____________________________________________________________________
-        --TILE0  (X0_Y0)
---------------------------------- PLL Ports --------------------------------
-        TILE0_CLK00_IN                  =>      tile0_gtp0_refclk_i,
-        TILE0_CLK01_IN                  =>      tile0_gtp1_refclk_i,
-        TILE0_GTPRESET0_IN              =>      GTPRst,
-        TILE0_GTPRESET1_IN              =>      GTPRst,
-        TILE0_PLLLKDET0_OUT             =>      PllLkDtct(0),
-        TILE0_PLLLKDET1_OUT             =>      PllLkDtct(1),
-        TILE0_RESETDONE0_OUT            =>      GTPRstDn(0),
-        TILE0_RESETDONE1_OUT            =>      GTPRstDn(1),
-       ----------------------- Receive Ports - 8b10b Decoder ----------------------
-        TILE0_RXCHARISCOMMA0_OUT        =>      Rx_IsComma(0),
-        TILE0_RXCHARISCOMMA1_OUT        =>      Rx_IsComma(1),
-        TILE0_RXCHARISK0_OUT            =>      Rx_IsCtrl(0),
-        TILE0_RXCHARISK1_OUT            =>      Rx_IsCtrl(1),
-        TILE0_RXDISPERR0_OUT            =>      GTPDisp(0),
-        TILE0_RXDISPERR1_OUT            =>      GTPDisp(1),
-        TILE0_RXNOTINTABLE0_OUT         =>      InvalidChar(0),
-        TILE0_RXNOTINTABLE1_OUT         =>      InvalidChar(1),
-       ---------------------- Receive Ports - Clock Correction --------------------
-		  TILE0_RXCLKCORCNT0_OUT          =>      GtpRxBuffCnt(0),
-		  TILE0_RXCLKCORCNT1_OUT          =>      GtpRxBuffCnt(1),
-	    --------------- Receive Ports - Comma Detection and Alignment --------------
-        TILE0_RXENMCOMMAALIGN0_IN       =>      Reframe(0), -- '0',
-        TILE0_RXENMCOMMAALIGN1_IN       =>      Reframe(1), -- '0', 
-        TILE0_RXENPCOMMAALIGN0_IN       =>      Reframe(0),
-        TILE0_RXENPCOMMAALIGN1_IN       =>      Reframe(1),
-        ----------------------- Receive Ports - PRBS Detection ---------------------
-        TILE0_PRBSCNTRESET0_IN          =>      PRBSCntRst(0), 
-        TILE0_PRBSCNTRESET1_IN          =>      PRBSCntRst(1), 
-        TILE0_RXENPRBSTST0_IN           =>      EnPRBSTst(0), 
-        TILE0_RXENPRBSTST1_IN           =>      EnPRBSTst(1),
-        TILE0_RXPRBSERR0_OUT            =>      PRBSErr(0),
-        TILE0_RXPRBSERR1_OUT            =>      PRBSErr(1),
-       ------------------- Receive Ports - RX Data Path interface -----------------
-        TILE0_RXDATA0_OUT               =>      GTPRx(0),
-        TILE0_RXDATA1_OUT               =>      GTPRx(1),
-        TILE0_RXRESET0_IN               =>      GTPRst,
-        TILE0_RXRESET1_IN               =>      GTPRst,
-        TILE0_RXUSRCLK0_IN              =>      UsrClk(0), 
-        TILE0_RXUSRCLK1_IN              =>      UsrClk(1), 
-        TILE0_RXUSRCLK20_IN             =>      UsrClk2(0), 
-        TILE0_RXUSRCLK21_IN             =>      UsrClk2(1), 
-      ------- Receive Ports - RX Driver,OOB signalling,Coupling and Eq.,CDR ------
-        TILE0_RXN0_IN                   =>      GTPRx_N(0),
-        TILE0_RXN1_IN                   =>      GTPRx_N(1),
-        TILE0_RXP0_IN                   =>      GTPRx_P(0),
-        TILE0_RXP1_IN                   =>      GTPRx_P(1),
-      ----------- Receive Ports - RX Elastic Buffer and Phase Alignment ----------
-        TILE0_RXBUFSTATUS0_OUT          =>      GtpRxBuffStat(0),
-        TILE0_RXBUFSTATUS1_OUT          =>      GtpRxBuffStat(1),
-      --------------- Receive Ports - RX Loss-of-sync State Machine --------------
-        TILE0_RXLOSSOFSYNC0_OUT         =>      RxLOS(0),
-        TILE0_RXLOSSOFSYNC1_OUT         =>      RxLOS(1),
-       -------------------- Receive Ports - RX Polarity Control -------------------
-		  TILE0_RXPOLARITY0_IN            =>      '1',
-		  TILE0_RXPOLARITY1_IN            =>      '0',
-       ---------------------------- TX/RX Datapath Ports --------------------------
-        TILE0_GTPCLKOUT0_OUT            =>      GTPSysClk(0),
-        TILE0_GTPCLKOUT1_OUT            =>      GTPSysClk(1),
-       ------------------- Transmit Ports - 8b10b Encoder Control -----------------
-        TILE0_TXCHARISK0_IN             =>      TxCharIsK(0),
-        TILE0_TXCHARISK1_IN             =>      TxCharIsK(1),
-        TILE0_TXKERR0_OUT               =>      TxCharErr(0),
-        TILE0_TXKERR1_OUT               =>      TxCharErr(1),
-       ------------------ Transmit Ports - TX Data Path interface -----------------
-        TILE0_TXDATA0_IN                =>      GTPTx(0),
-        TILE0_TXDATA1_IN                =>      GTPTx(1),
-        TILE0_TXUSRCLK0_IN              =>      UsrClk(0),
-        TILE0_TXUSRCLK1_IN              =>      UsrClk(1),
-        TILE0_TXUSRCLK20_IN             =>      UsrClk2(0),
-        TILE0_TXUSRCLK21_IN             =>      UsrClk2(1),
-       --------------- Transmit Ports - TX Driver and OOB signalling --------------
-        TILE0_TXN0_OUT                  =>      GTPTx_N(0),
-        TILE0_TXN1_OUT                  =>      GTPTx_N(1),
-        TILE0_TXP0_OUT                  =>      GTPTx_P(0),
-        TILE0_TXP1_OUT                  =>      GTPTx_P(1),
-        TILE0_TXENPRBSTST0_IN           =>      En_PRBS(0),
-        TILE0_TXENPRBSTST1_IN           =>      En_PRBS(1)
-);
-
--- GTP logic processes
-
--- GTP event handling process
-TrigReqTx : process (UsrClk2(0), CpldRst, LinkBuffRst)
+TrigReqTx : process (EthClk, CpldRst, LinkBuffRst)
 
 begin
 
  if CpldRst = '0' then 
 
-	CommaDL(0) <= "00"; GTPRxReg(0) <= X"0000";
-	UsrWRDL(0) <= "00"; UsrRDDL(0) <= "00";
-	Reframe(0) <= '1'; GTPTx(0) <= X"BC3C";
-	TxCharIsK(0) <= "11"; GTPTxStage(0) <= X"BC3C"; 
 	TxSeqNo(0) <= "000"; TxCRCRst(0) <= '0';
-    TxCRCEn(0) <= '0'; RdCRCEn(0) <= '0'; 
-	RxCRCRst(0) <= '0';  RxCRCRstD(0) <= '0';
-	PRBSCntRst(0) <= '0'; TrigReqWdCnt <= X"0"; 
+    TxCRCEn(0) <= '0'; TrigReqWdCnt <= X"0"; 
 	-- DG: TODO: where does the reset for the Data Request write come from?
 	-- DReqBuff_wr_en <= '0'; --DANIEL
-	DCSTxBuff_wr_en <= '0'; DReq_Count <= (others =>'0');
-	LinkRDDL <= "00"; Packet_Parser <= Idle; Event_Builder <= Idle;
-	RxSeqNoErr(0) <= '0'; Packet_Former <= Idle; FormRst <= '0';
+	Event_Builder <= Idle;
 	LinkFIFORdReq <= (others =>'0'); StatOr <= X"00"; 
 	EvTxWdCnt <= (others => '0'); EvTxWdCntTC <= '0'; EventBuff_RdEn <= '0';
 	FIFOCount <= (others => (others => '0')); EventBuff_WrtEn <= '0';
@@ -719,176 +544,11 @@ begin
 	-- TStmpBuff_Full <= '0'; TStmpBuff_Empty <= '0';
 	-- ExtTrigTStampBuff_Full <= '0'; ExtTrigTStampBuff_Empty <= '0';
 	TxPkCnt <= (others => '0'); Pkt_Timer <= X"0";
-	EmptyLatch <= "000"; En_PRBS(0) <= "000";
-	FormStatReg <= "000"; GTPRxBuff_wr_en(0) <= '0'; 
+	EmptyLatch <= "000"; 
 	ActiveReg <= X"000000"; LinkFIFOStatReg <= "000";
-	Stat_DReq <= '0'; AddrReg <= (others =>'0');
+	AddrReg <= (others =>'0');
 	
-elsif rising_edge (UsrClk2(0)) then
-
-	if Pkt_Timer = 0 and 
-		(Packet_Former = WrtHdrPkt or Packet_Former = WrtCtrlHdrPkt 
-		  or Packet_Former = WrtDatPkt)
-	then GTPTx(0) <= TxCRC(0); 
-	else GTPTx(0) <= GTPTxStage(0);
-	end if;
-
-	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' 
-	then GTPRxBuff_wr_en(0) <= '1';
-	else GTPRxBuff_wr_en(0) <= '0';
-	end if;
-
--- If a packet header is being received then reset the Rx CRC generator
-	  if Rx_IsCtrl(0) = "10" then RxCRCRst(0) <= '1';
-	else RxCRCRst(0) <= '0';
-	end if;
-
-	RxCRCRstD(0) <= RxCRCRst(0);
-	GTPRxReg(0) <= GTPRx(0);
-
-	  if Rx_IsCtrl(0) = "00" then RdCRCEn(0) <= '1'; 
-	else RdCRCEn(0) <= '0'; 
-	end if;
-
-	CommaDL(0)(0) <= Rx_IsComma(0)(0);
-	CommaDL(0)(1) <= CommaDL(0)(0);
-
--- Hold reframe until a vaild pad character set is decoded
-	if InvalidChar(0) = "00" and CommaDL(0) = 1 then Reframe(0) <= '0';
-	elsif InvalidChar(0) /= "00" then Reframe(0) <= '1';
-	else Reframe(0) <= Reframe(0);
-	end if;
-
-	UsrWRDL(0)(0) <= not uCWR and not CpldCS;
-   UsrWRDL(0)(1) <= UsrWRDL(1)(0);
-
-	UsrRDDL(0)(0) <= not uCRD and not CpldCS;
-	UsrRDDL(0)(1) <= UsrRDDL(0)(0);
-
-	if (uCWR = '0' or uCRD = '0') and CpldCS = '0' then AddrReg <= uCA;
-	else AddrReg <= AddrReg;
-	end if;
-
--- Use this address to append K28.0 to Dx.y where x is 5 bits of data and
--- y is the packet sequence number to five bits of microcontroller data
-	if UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(0)
-	 then GTPTx(0) <= X"1C" & TxSeqNo(0) & uCD(4 downto 0);
-			TxCRCDat(0) <= X"0000";
--- Use this address to send unmodified microcontroller data
-	elsif UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(2)
-	 then GTPTx(0) <= uCD; TxCRCDat(0) <= uCD;
-	-- Use this address to send the check sum
-	elsif (UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(4))
-	 then GTPTx(0) <= TxCRC(0); TxCRCDat(0) <= X"0000";
-
--- Data header packet ID field is 5 bits wide 
--- The header packet ID is 5 
-	elsif Packet_Former = WrtHdrPkt 
-	 then
-			Case Pkt_Timer is
-			 When X"A" => GTPTxStage(0) <= X"1C" & TxSeqNo(0) & "00101"; TxCRCDat(0) <= X"0000";
-			 When X"8" => GTPTxStage(0) <= X"8050"; TxCRCDat(0) <= X"8050";
-			 When X"7" => GTPTxStage(0) <= "00000" & TxPkCnt; TxCRCDat(0) <= "00000" & TxPkCnt;
-			 -- DG: change TStmpBuff from 16bits wide to 48 bits wide
-			 -- DG: TODO: is this the correct endian-ness?
-			 When X"6" => GTPTxStage(0) <= TStmpBuff_Out(15 downto  0); TxCRCDat(0) <= TStmpBuff_Out(15 downto  0);
-			 When X"5" => GTPTxStage(0) <= TStmpBuff_Out(31 downto 16); TxCRCDat(0) <= TStmpBuff_Out(31 downto 16);
-			 When X"4" => GTPTxStage(0) <= TStmpBuff_Out(47 downto 32); TxCRCDat(0) <= TStmpBuff_Out(47 downto 32);
-			 -- DG: use two of the "buffer" words to include the trigger time
-			 -- only save the low two words -- TODO: is this sufficient?
-			 When X"3" => GTPTxStage(0) <= ExtTrigTStampBuff_Out(15 downto  0); TxCRCDat(0) <= ExtTrigTStampBuff_Out(15 downto  0);
-			 When X"2" => GTPTxStage(0) <= ExtTrigTStampBuff_Out(31 downto 16); TxCRCDat(0) <= ExtTrigTStampBuff_Out(31 downto 16);
-			 When X"0" => GTPTxStage(0) <= X"BC3C"; TxCRCDat(0) <= X"0000";
-			 When others => GTPTxStage(0) <= X"0000"; TxCRCDat(0) <= X"0000";
-	      end case;
-	elsif Packet_Former = WrtCtrlHdrPkt
-	 then
-			Case Pkt_Timer is
-		    When X"A" => GTPTxStage(0) <= X"1C" & TxSeqNo(0) & "00110"; TxCRCDat(0) <= X"0000";
-			 When X"9" => GTPTxStage(0) <= X"00" & X"6" & IDReg;
-							  TxCRCDat(0) <= X"00" & X"6" & IDReg; 
--- Add the words in the controller header packet to the total word count
-			 When X"8" => GTPTxStage(0) <= EventBuff_Out + 8;
-							  TxCRCDat(0) <= EventBuff_Out + 8;
-			 When X"7" => GTPTxStage(0) <= X"00" & ActiveReg(23 downto 16);
-							  TxCRCDat(0) <= X"00" & ActiveReg(23 downto 16);
-			 When X"6" => GTPTxStage(0) <= ActiveReg(15 downto 0);
-							  TxCRCDat(0) <= ActiveReg(15 downto 0);
-			 When X"5" => GTPTxStage(0) <= DReq_Count;
-							  TxCRCDat(0) <= DReq_Count;
-			 When X"4" => GTPTxStage(0) <= EventBuff_Out; TxCRCDat(0) <= EventBuff_Out;
-			 When X"0" => GTPTxStage(0) <= X"BC3C"; TxCRCDat(0) <= X"0000";
-			 When others => GTPTxStage(0) <= X"0000"; TxCRCDat(0) <= X"0000";
-	      end case;
-	elsif Packet_Former = WrtDatPkt 
-	   then 
-		 if    Pkt_Timer = 10 then GTPTxStage(0) <= X"1C" & TxSeqNo(0) & "00110"; TxCRCDat(0) <= X"0000";
-		 elsif Pkt_Timer =  0 then GTPTxStage(0) <= X"BC3C"; TxCRCDat(0) <= X"0000";
-		 elsif EvTxWdCnt > 0 or EvTxWdCntTC = '1' 
-			then GTPTxStage(0) <= EventBuff_Out; TxCRCDat(0) <= EventBuff_Out;
-		 else GTPTxStage(0) <= X"0000"; TxCRCDat(0) <= X"0000";
-	  end if;
--- Pad is K28.5 K28.1 pair
-	 else GTPTxStage(0) <= X"BC3C"; TxCRCDat(0) <= X"0000";
-	end if;
-
-	-- Increment the sequence number and clear CRC when sending Packet ID
-	if (UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(0))
-		or ((Packet_Former = WrtHdrPkt or Packet_Former = WrtCtrlHdrPkt 
-		or Packet_Former = WrtDatPkt) and Pkt_Timer = 10)
-	 then TxSeqNo(0) <= TxSeqNo(0) + 1;
-			TxCRCRst(0) <= '1';
-	 else TxSeqNo(0) <= TxSeqNo(0);
-			TxCRCRst(0) <= '0';
-	end if;
-
--- Accumulate CRC while transmitting data
-	if (UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(2))
-	 or ((Packet_Former = WrtHdrPkt or Packet_Former = WrtCtrlHdrPkt
-	 or Packet_Former = WrtDatPkt) and Pkt_Timer /= 0 and Pkt_Timer /= 10)
-	then TxCRCEn(0) <= '1';
-	else
-	 TxCRCEn(0) <= '0';
-	end if;
-
--- One byte is control when sending the packet ID
-	if (UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(0))
-		or ((Packet_Former = WrtHdrPkt or Packet_Former = WrtCtrlHdrPkt 
-		or Packet_Former = WrtDatPkt) and Pkt_Timer = 9)
-	 then	TxCharIsK(0) <= "10";
--- Two bytes are data when sending the packet payload
-	elsif (UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(2))
-	 or  ((Packet_Former = WrtHdrPkt or Packet_Former = WrtCtrlHdrPkt
-	      or Packet_Former = WrtDatPkt) and Pkt_Timer /= 10 and Pkt_Timer /= 9)
-	 then TxCharIsK(0) <= "00";
--- Both bytes are K characters when sending pads
-	else TxCharIsK(0) <= "11";
-	end if;
-
-	if UsrWRDL(0) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr 
-	then FormRst <= uCD(7);
-	else FormRst <= '0';
-	end if;
-
--- Count down the nine words of the packet being received
-	if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "10" and GTPRx(0)(4 downto 0) = 2
-	then TrigReqWdCnt <= X"9";
-	elsif Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" and TrigReqWdCnt /= 0  
-	then TrigReqWdCnt <= TrigReqWdCnt - 1;
-	else TrigReqWdCnt <= TrigReqWdCnt;
-	end if;
-
-	-- DG: switch DReq buff driver from fiber to external trigger
-	--     TODO: may have to switch this back later
-	--if Rx_IsComma(0) = "00" and ReFrame(0) = '0' and Rx_IsCtrl(0) = "00" and TrigReqWdCnt > 0
-	--then DReqBuff_wr_en <= '1'; 
-	--else DReqBuff_wr_en <= '0'; 
-	--end if;
-
-	if TrigTx_Sel = '1' and DReqBuff_Emtpy = '0'
-	then Stat_DReq <= '0';
-	else Stat_DReq <= '1';
-	end if;
+elsif rising_edge (EthClk) then
 
 -- Store the empty flag values when they make a transition, 
 -- then try and send the updated value
@@ -905,40 +565,6 @@ elsif rising_edge (UsrClk2(0)) then
 --	then TStmpBuff_wr_en <= '1';
 --	else TStmpBuff_wr_en <= '0';
 --	end if;
-
-	LinkRDDL(0) <= not CpldCS and not uCRD;
-	LinkRDDL(1) <= LinkRDDL(0);
-
----------------------------------------------------------------------------
---	Idle,Read_Type,Check_Seq_No,Wrt_uC_Queue,Wrt_FPGA_Queue,SendHeartBeat,Check_CRC
----------------------------------------------------------------------------
-
-Case Packet_Parser is
-	when Idle =>
-	 if GTPRxBuff_Emtpy(0) = '0' then Packet_Parser <= Check_Seq_No;
-	 else Packet_Parser <= Idle;
-	 end if;
-	when Check_Seq_No => 
-		if GTPRxBuff_Out(0)(4 downto 0) = 2 
-		 then Packet_Parser <= Wrt_FPGA_Queue;
-		else Packet_Parser <= Wrt_uC_Queue;
-		end if;
-	when Wrt_FPGA_Queue => 
-		if WrtCount(0) = 0 then Packet_Parser <= Check_CRC;
-		else Packet_Parser <= Wrt_FPGA_Queue;
-		end if;
-	when Wrt_uC_Queue => 
-		if WrtCount(0) = 0 then Packet_Parser <= Check_CRC;
-		else Packet_Parser <= Wrt_uC_Queue;
-		end if;
-	when Check_CRC => Packet_Parser <= Idle;
-	when others => Packet_Parser <= Idle;
-end Case;
-
-if Packet_Parser = Check_Seq_No and GTPRxBuff_Out(0)(7 downto 5) /= RxSeqNo(0)
-  then RxSeqNoErr(0) <= '1';
- elsif GTPRst = '1' then RxSeqNoErr(0) <= '0';
- end if;
 
 ---------------------------------------------------------------------------
 -- Idle,RdInWdCnt0,RdInWdCnt1,RdInWdCnt2,SumWdCnt,WrtWdCnt,RdStat0,
@@ -1134,163 +760,126 @@ end if;
    then EventBuff_WrtEn <= '1'; --Debug(6) <= '1';
   else EventBuff_WrtEn <= '0';  --Debug(6) <= '0';
  end if;
+--	Read of the trigger request FIFO
+	if RDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = EventBuffAd 
+	then EventBuff_RdEn <= '1';
+	else EventBuff_RdEn <= '0';
+	end if;
 
-if (Packet_Former = WrtCtrlHdrPkt and (Pkt_Timer = 8 or Pkt_Timer = 4))
- or (Packet_Former = WrtDatPkt and Pkt_Timer > 2 and EvTxWdCnt > 0)
-then EventBuff_RdEn <= '1';  --Debug(5) <= '1';
-else EventBuff_RdEn <= '0';  --Debug(5) <= '0';
-end if;
+
+
+--if (Packet_Former = WrtCtrlHdrPkt and (Pkt_Timer = 8 or Pkt_Timer = 4))
+-- or (Packet_Former = WrtDatPkt and Pkt_Timer > 2 and EvTxWdCnt > 0)
+--then EventBuff_RdEn <= '1';  --Debug(5) <= '1';
+--else EventBuff_RdEn <= '0';  --Debug(5) <= '0';
+--end if;
 
 --Debug(4) <= EventBuff_Empty;
 
 --Debug(3 downto 1) <= LinkFIFOEmpty;
-
----------------------------------------------------------------------------
--- Idle,WrtPktCnt,WrtHdrPkt,WrtCtrlHdrPkt,WrtDatPkt
----------------------------------------------------------------------------
-Case Packet_Former is 
-	when Idle => FormStatReg <= "000"; 
-		if EventBuff_Empty = '0' then Packet_Former <= WrtPktCnt;
-		else Packet_Former <= Idle;
-		end if;
--- Divide by eight to get the number of packets
-	when WrtPktCnt => Packet_Former <= WrtHdrPkt;  FormStatReg <= "001";  
--- Send the packet header, packet type, packet count, time stamp and status
-	when WrtHdrPkt => FormStatReg <= "010"; 
-		if Pkt_Timer = 0 then Packet_Former <= WrtCtrlHdrPkt;
-	    elsif FormRst = '1' then Packet_Former <= Idle; 
-		else Packet_Former <= WrtHdrPkt;
-		end if;
-	when WrtCtrlHdrPkt =>  FormStatReg <= "011";  
-		if Pkt_Timer = 0 then Packet_Former <= WrtDatPkt;
-	 elsif FormRst = '1' then Packet_Former <= Idle; 
-	else Packet_Former <= WrtCtrlHdrPkt;
-		end if;
--- After Controller header is sent, the packets contain data for this FEB
--- The FEB header data is embedded in the sream coming from the front FPGAs
-	when WrtDatPkt => FormStatReg <= "100";   
-		if EvTxWdCnt = 0 and Pkt_Timer = 0
-			then Packet_Former <= Idle;
-		 elsif FormRst = '1' then Packet_Former <= Idle; 
-		else Packet_Former <= WrtDatPkt;
-		end if;
-	when others => Packet_Former <= Idle;  FormStatReg <= "101";
-end Case;
-
--- Sum word counts, divide by eight and add 1 for the controller header packet
-   if Packet_Former = WrtPktCnt and EventBuff_Out(2 downto 0)  = 0 then TxPkCnt <= EventBuff_Out(13 downto 3) + 1;
--- If not and even multiple of eight, account for final partially filled packet
-elsif Packet_Former = WrtPktCnt and EventBuff_Out(2 downto 0) /= 0 then TxPkCnt <= EventBuff_Out(13 downto 3) + 2;
--- Decrement the packet count once for each packet ID write
-elsif ((Packet_Former = WrtDatPkt or Packet_Former = WrtCtrlHdrPkt) and Pkt_Timer = 9) then TxPkCnt <= TxPkCnt - 1;
-else TxPkCnt <= TxPkCnt;
-end if;
-
--- Extract the word count from the event buffer FIFO 
-   if Packet_Former = WrtPktCnt
-		then EvTxWdCnt <= EventBuff_Out(13 downto 0);
--- Decrement the word count for each word sent within a data packet
-	elsif EvTxWdCnt /= 0 and Packet_Former = WrtDatPkt and Pkt_Timer > 2
-		then EvTxWdCnt <= EvTxWdCnt - 1;
-	else EvTxWdCnt <= EvTxWdCnt;
-	end if;
-
--- Use this word count terminal count to distinguish the last valid word read
--- from the event buffer FIFO
-	if EvTxWdCnt = 1 and Packet_Former = WrtDatPkt and Pkt_Timer > 2
-		then EvTxWdCntTC <= '1';
-	elsif EvTxWdCnt /= 1 and Packet_Former = WrtDatPkt and Pkt_Timer > 2
-		then EvTxWdCntTC <= '0';
-	else EvTxWdCntTC <= EvTxWdCntTC;
-	end if;
-
--- DG: change TStmpBuff setup
--- 
--- Before, TStmpBuff was 16bits wide and so neded to be read 3 times to get
--- the full 48bit Timestamp. Now it is 48 bits, so it only needs to be read once
-
--- Read of timestamps for use in forming the header packet
-
--- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5) -- DG: OLD
-if (Packet_Former = WrtHdrPkt and Pkt_Timer = 7) -- DG: NEW 
-	then TStmpBuff_rd_en <= '1';
-	else TStmpBuff_rd_en <= '0';
-end if;
-
--- DG: also read the trigger time stamp FIFO
-if (Packet_Former = WrtHdrPkt and Pkt_Timer = 4)
-	then ExtTrigTStampBuff_rd_en <= '1';
-	else ExtTrigTStampBuff_rd_en <= '0';
-end if;
-
--- Also read trigger time stamp for 
-
--- Increment the data request counter when forming the header packet.
-if Packet_Former = WrtHdrPkt and Pkt_Timer = 9 then DReq_Count <= DReq_Count + 1;
-elsif GTPRxRst = '1' then DReq_Count <= (others => '0');
-else DReq_Count <= DReq_Count;
-end if;
-
--- Counter for dividing data into packets
-if Packet_Former = WrtPktCnt then Pkt_Timer <= X"A";
-elsif Pkt_Timer /= 0 and (Packet_Former = WrtHdrPkt 
-or Packet_Former = WrtCtrlHdrPkt or Packet_Former = WrtDatPkt)
-	then Pkt_Timer <= Pkt_Timer - 1;
-elsif Pkt_Timer = 0 and (Packet_Former = WrtHdrPkt 
-or Packet_Former = WrtCtrlHdrPkt or Packet_Former = WrtDatPkt)
-	then Pkt_Timer <= X"A";
-elsif Packet_Former = Idle then Pkt_Timer <= X"0";
-else Pkt_Timer <= Pkt_Timer;
-end if;
+--
+-----------------------------------------------------------------------------
+---- Idle,WrtPktCnt,WrtHdrPkt,WrtCtrlHdrPkt,WrtDatPkt
+-----------------------------------------------------------------------------
+--Case Packet_Former is 
+--	when Idle => FormStatReg <= "000"; 
+--		if EventBuff_Empty = '0' then Packet_Former <= WrtPktCnt;
+--		else Packet_Former <= Idle;
+--		end if;
+---- Divide by eight to get the number of packets
+--	when WrtPktCnt => Packet_Former <= WrtHdrPkt;  FormStatReg <= "001";  
+---- Send the packet header, packet type, packet count, time stamp and status
+--	when WrtHdrPkt => FormStatReg <= "010"; 
+--		if Pkt_Timer = 0 then Packet_Former <= WrtCtrlHdrPkt;
+--	    elsif FormRst = '1' then Packet_Former <= Idle; 
+--		else Packet_Former <= WrtHdrPkt;
+--		end if;
+--	when WrtCtrlHdrPkt =>  FormStatReg <= "011";  
+--		if Pkt_Timer = 0 then Packet_Former <= WrtDatPkt;
+--	 elsif FormRst = '1' then Packet_Former <= Idle; 
+--	else Packet_Former <= WrtCtrlHdrPkt;
+--		end if;
+---- After Controller header is sent, the packets contain data for this FEB
+---- The FEB header data is embedded in the sream coming from the front FPGAs
+--	when WrtDatPkt => FormStatReg <= "100";   
+--		if EvTxWdCnt = 0 and Pkt_Timer = 0
+--			then Packet_Former <= Idle;
+--		 elsif FormRst = '1' then Packet_Former <= Idle; 
+--		else Packet_Former <= WrtDatPkt;
+--		end if;
+--	when others => Packet_Former <= Idle;  FormStatReg <= "101";
+--end Case;
+--
+---- Sum word counts, divide by eight and add 1 for the controller header packet
+--   if Packet_Former = WrtPktCnt and EventBuff_Out(2 downto 0)  = 0 then TxPkCnt <= EventBuff_Out(13 downto 3) + 1;
+---- If not and even multiple of eight, account for final partially filled packet
+--elsif Packet_Former = WrtPktCnt and EventBuff_Out(2 downto 0) /= 0 then TxPkCnt <= EventBuff_Out(13 downto 3) + 2;
+---- Decrement the packet count once for each packet ID write
+--elsif ((Packet_Former = WrtDatPkt or Packet_Former = WrtCtrlHdrPkt) and Pkt_Timer = 9) then TxPkCnt <= TxPkCnt - 1;
+--else TxPkCnt <= TxPkCnt;
+--end if;
+--
+---- Extract the word count from the event buffer FIFO 
+--   if Packet_Former = WrtPktCnt
+--		then EvTxWdCnt <= (13 downto 0);
+---- Decrement the word count for each word sent within a data packet
+--	elsif EvTxWdCnt /= 0 and Packet_Former = WrtDatPkt and Pkt_Timer > 2
+--		then EvTxWdCnt <= EvTxWdCnt - 1;
+--	else EvTxWdCnt <= EvTxWdCnt;
+--	end if;
+--
+---- Use this word count terminal count to distinguish the last valid word read
+---- from the event buffer FIFO
+--	if EvTxWdCnt = 1 and Packet_Former = WrtDatPkt and Pkt_Timer > 2
+--		then EvTxWdCntTC <= '1';
+--	elsif EvTxWdCnt /= 1 and Packet_Former = WrtDatPkt and Pkt_Timer > 2
+--		then EvTxWdCntTC <= '0';
+--	else EvTxWdCntTC <= EvTxWdCntTC;
+--	end if;
+--
+---- DG: change TStmpBuff setup
+---- 
+---- Before, TStmpBuff was 16bits wide and so neded to be read 3 times to get
+---- the full 48bit Timestamp. Now it is 48 bits, so it only needs to be read once
+--
+---- Read of timestamps for use in forming the header packet
+--
+---- if (Packet_Former = WrtHdrPkt and Pkt_Timer <= 7 and Pkt_Timer >= 5) -- DG: OLD
+--if (Packet_Former = WrtHdrPkt and Pkt_Timer = 7) -- DG: NEW 
+--	then TStmpBuff_rd_en <= '1';
+--	else TStmpBuff_rd_en <= '0';
+--end if;
+--
+---- DG: also read the trigger time stamp FIFO
+--if (Packet_Former = WrtHdrPkt and Pkt_Timer = 4)
+--	then ExtTrigTStampBuff_rd_en <= '1';
+--	else ExtTrigTStampBuff_rd_en <= '0';
+--end if;
+--
+---- Also read trigger time stamp for 
+--
+---- Increment the data request counter when forming the header packet.
+--if Packet_Former = WrtHdrPkt and Pkt_Timer = 9 then DReq_Count <= DReq_Count + 1;
+--elsif GTPRxRst = '1' then DReq_Count <= (others => '0');
+--else DReq_Count <= DReq_Count;
+--end if;
+--
+---- Counter for dividing data into packets
+--if Packet_Former = WrtPktCnt then Pkt_Timer <= X"A";
+--elsif Pkt_Timer /= 0 and (Packet_Former = WrtHdrPkt 
+--or Packet_Former = WrtCtrlHdrPkt or Packet_Former = WrtDatPkt)
+--	then Pkt_Timer <= Pkt_Timer - 1;
+--elsif Pkt_Timer = 0 and (Packet_Former = WrtHdrPkt 
+--or Packet_Former = WrtCtrlHdrPkt or Packet_Former = WrtDatPkt)
+--	then Pkt_Timer <= X"A";
+--elsif Packet_Former = Idle then Pkt_Timer <= X"0";
+--else Pkt_Timer <= Pkt_Timer;
+--end if;
 
 end if; -- CpldRst
 
 end process;
 
-GTP1I_O : process (UsrClk2(1), CpldRst)
-
-begin
-
- if CpldRst = '0' then 
-	-- DG: moved resets associated with data request buffer onto SysClk
-
-	CommaDL(1) <= "00"; GTPRxReg(1) <= X"0000";
-	UsrWRDL(1) <= "00"; Reframe(1) <= '1'; 
-	RxCRCRst(1) <= '0'; RxCRCRstD(1) <= '0'; 
-	PRBSCntRst(1) <= '0';
-	En_PRBS(1) <= "000"; 
-
-
-elsif rising_edge (UsrClk2(1)) then
-
-	if Rx_IsComma(1) = "00" and ReFrame(1) = '0' 
-	then GTPRxBuff_wr_en(1) <= '1'; 
-	else GTPRxBuff_wr_en(1) <= '0'; 
-	end if;
-
-	if Rx_IsCtrl(1) = "10" then RxCRCRstD(1) <= '1';
-	else RxCRCRstD(1) <= '0';
-	end if;
-
-	RxCRCRst(1) <= RxCRCRstD(1);
-	GTPRxReg(1) <= GTPRx(1);
-
-	if Rx_IsCtrl(1) = "00" then RdCRCEn(1) <= '1'; 
-	else RdCRCEn(1) <= '0'; 
-	end if;
-
-	CommaDL(1)(0) <= Rx_IsComma(1)(0);
-	CommaDL(1)(1) <= CommaDL(1)(0);
-
-	if InvalidChar(1) = "00" and CommaDL(1) = 1 then Reframe(1) <= '0';
-	elsif InvalidChar(1) /= "00" then Reframe(1) <= '1';
-	else Reframe(1) <= Reframe(1);
-	end if;
-
-	UsrWRDL(1)(0) <= not uCWR and not CpldCS;
-   UsrWRDL(1)(1) <= UsrWRDL(1)(0);
-end if;
-end process;
 
 -- DG: new process -- handles generation of Data Request from external LEMO-NIM trigger
 Daniel_DATAREQ : process (SysClk, CpldRst)
@@ -1298,11 +887,10 @@ begin
 
  if CpldRst = '0' then 
 
-	TxCharIsK(1) <= "11"; GTPTx(1) <= X"BC3C";
+	TxCharIsK(1) <= "11"; 
 	TxSeqNo(1) <= "000"; TxCRCRst(1) <= '0';
    TxCRCEn(1) <= '0'; TxCRCDat(1) <= X"0000";
-	PRBSCntRst(1) <= '0';
-	En_PRBS(1) <= "000"; Trig_Tx_Ack <= '0';
+	Trig_Tx_Ack <= '0';
 	IntTrigSeq <= Idle; 
 elsif rising_edge (SysClk) then
 
@@ -1337,8 +925,7 @@ end Case;
 DReqBuff_wr_en <= '0';
 -- Use this address to append K28.0 to Dx.y where x is 5 bits of data and
 -- y is the packet sequence number
-	if (UsrWRDL(1) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(1))
-	   or IntTrigSeq = SendTrigHdr  
+	if IntTrigSeq = SendTrigHdr  
 		--DG TODO: make it more explicit that header is not included in Data Request Packet
 		-- HEADER IS NOT INCLUDED IN DATA REQUEST PACKET
 	then if IntTrigSeq = SendTrigHdr 
@@ -1353,8 +940,7 @@ DReqBuff_wr_en <= '0';
 			--DReqBuff_wr_en <= '1';
 
 -- Use this address to send unmodified data
-	elsif (UsrWRDL(1) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(3))
-	   or IntTrigSeq = SendPad0
+	elsif IntTrigSeq = SendPad0
 	 then if IntTrigSeq = SendPad0
 				then DReqBuff_In <= (others => '0');
 					  TxCRCDat(1) <= (others => '0');
@@ -1428,8 +1014,7 @@ DReqBuff_wr_en <= '0';
 			TxCRCRst(1) <= '0';
 			TxCRCEn(1) <= '0';
 -- Use this address to send the check sum
-	elsif (UsrWRDL(1) = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPWrtAddr(5))
-			or IntTrigSeq = SendCRC
+	elsif IntTrigSeq = SendCRC
 	 then DReqBuff_In <= TxCRC(1);
 			TxCharIsK(1) <= "00";
 			TxCRCRst(1) <= '0';
@@ -1524,7 +1109,7 @@ port map (
 -- Extract the eight payload bits from the 10 bit parallel data fron the deserializer
 -- Three lower bits from lane 1 and 5 bits from lane 0
 LinkBuff : LinkFIFO
-  port map (rst => LinkBuffRst, wr_clk => RxOutClk(i), rd_clk => UsrClk2(0), 
+  port map (rst => LinkBuffRst, wr_clk => RxOutClk(i), rd_clk => Ethclk, 
     wr_en => LinkFIFOWrReq(i),rd_en => LinkFIFORdReq(i),
     din(15 downto 13) => LinkPDat(i)(1)(7 downto 5),
     din(12 downto 8) => LinkPDat(i)(0)(9 downto 5),
@@ -1825,8 +1410,7 @@ main : process(SysClk, CpldRst)
 	PllSClk <= '0'; PllSDat <= '0'; PllLd <= '0';
 
 -- TDAQ Receive link signals
-	GTPRxBuff_rd_en <= "00"; 
-	RxSeqNo(0) <= "000";  WrtCount(0) <= "000";
+	WrtCount(0) <= "000";
 	TDisA <= '0'; TDisB <= '0';
 
 	PunchBits <= X"0"; FormHold <= '0'; ExtTmg <= '0';
@@ -2176,15 +1760,6 @@ then TestCount <= TestCount + 1;
 else TestCount <= TestCount;
 end if;
 
-if RDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = GTPRdAddr0 
-then GTPRxBuff_rd_en(0) <= '1';
-else GTPRxBuff_rd_en(0) <= '0'; 
-end if;
-
-if RDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = GTPRdAddr1
-then GTPRxBuff_rd_en(1) <= '1';
-else GTPRxBuff_rd_en(1) <= '0'; 
-end if;
 
 if WRDL = 1 and  uCA(11 downto 10) = GA and uCA(9 downto 0) = GTPCSRAddr  
  then   TDisA <= uCD(0); 
@@ -2634,12 +2209,13 @@ with uCA(9 downto 0) select
 
 iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel 
 		 & '0' & ExtTmg & '0' & FormHold & TmgCntEn & IntTmgEn when CSRRegAddr,
-		   Rx_IsCtrl(1) & InvalidChar(1) & Rx_IsComma(1) & Reframe(1) & TDisB 
-		 & Rx_IsCtrl(0) & InvalidChar(0) & Rx_IsComma(0) & Reframe(0) & TDisA when GTPCSRAddr,
-		 X"00" & "00" & GTPRxBuff_Full & GTPRxBuff_Emtpy & "00" when GTPFIFOAddr,
+		 X"0000" when GTPCSRAddr,
+		 X"0000" when GTPFIFOAddr,
 		 X"000" & "000" & PllPDn when PLLPDnAddr,
 		 DReqBuff_Out(15 downto 0) when TRigReqBuffAd,
 		 X"0" & '0' & TrgPktRdCnt when TRigReqWdUsedAd,
+		 EventBuff_Out when EventBuffAd,
+		 X"000" & "00" & EventBuff_Full & EventBuff_Empty when EventBuffStatAd,
 		 X"000" & "00" & TrgSrc & TstPlsEn when TrigCtrlAddr,
 		 X"00" & ActiveReg(23 downto 16) when ActvRegAddrHi,
 		 ActiveReg(15 downto 0) when ActvRegAddrLo,
@@ -2657,12 +2233,12 @@ iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel
 		 LinkFIFOOut(1) when LinkRdAddr(1),
 		 LinkFIFOOut(2) when LinkRdAddr(2),
 		 X"00" & '0' & LinkFIFOFull & '0' & LinkFIFOEmpty when LinkCSRAddr,
-		 GTPRxBuff_Out(0) when GTPRdAddr0,
-		 GTPRxBuff_Out(1) when GTPRdAddr1,
+		 --GTPRxBuff_Out(0) when GTPRdAddr0,
+		 --GTPRxBuff_Out(1) when GTPRdAddr1,
 		 TxCRC(0) when CRCRdAddr(0),
 		 TxCRC(1) when CRCRdAddr(1),
-		 RxCRC(0) when CRCRdAddr(2),
-		 RxCRC(1) when CRCRdAddr(3),
+		 --RxCRC(0) when CRCRdAddr(2),
+		 --RxCRC(1) when CRCRdAddr(3),
 		 "00" & EvTxWdCnt when EvTxWdCntAd,
 		 "000" & LinkFIFORdCnt(0) when LinkWdCnt0Ad,
 		 "000" & LinkFIFORdCnt(1) when LinkWdCnt1Ad,

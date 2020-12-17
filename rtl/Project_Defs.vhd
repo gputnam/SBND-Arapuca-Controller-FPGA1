@@ -60,6 +60,8 @@ constant LinkCSRAddr : AddrPtr := "00" & X"27";
 Type CRCArrayType is Array(0 to 3) of AddrPtr;
 constant CRCRdAddr : CRCArrayType := ("00" & X"28","00" & X"29",
 												  "00" & X"2A","00" & X"2B");
+constant EventBuffAd : AddrPtr := "00" & X"2D"; 
+constant EventBuffStatAd : AddrPtr := "00" & X"2E"; 
 
 constant HrtBtBrstCntAdHi : AddrPtr := "00" & X"32"; 
 constant HrtBtBrstCntAdLo : AddrPtr := "00" & X"33"; 
