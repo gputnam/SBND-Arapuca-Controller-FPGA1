@@ -257,7 +257,8 @@ NET "BnchClk" LOC = E22;
 #NET "UsrClk2[1]" TNM_NET = "tile0_txusrclk21_i";
 #TIMESPEC "TS_tile0_txusrclk21_i" = PERIOD "tile0_txusrclk21_i" 6.4;
 
-TIMESPEC TS_ClkB_P = PERIOD "ClkB_P" 9.4 ns HIGH 50%;
+#TIMESPEC TS_ClkB_P = PERIOD "ClkB_P" 9.4 ns HIGH 50%;
+TIMESPEC TS_ClkB_P = PERIOD "ClkB_P" 160 mhz HIGH 50%;
 NET "ClkB_P" TNM_NET = "ClkB_P";
 
 TIMESPEC TS_VXO_P = PERIOD "VXO_P" 9.4 ns HIGH 50%;
