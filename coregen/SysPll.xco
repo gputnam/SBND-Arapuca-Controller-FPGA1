@@ -1,7 +1,7 @@
 ##############################################################
 #
 # Xilinx Core Generator version 14.7
-# Date: Wed Dec 16 18:54:53 2020
+# Date: Thu Dec 17 17:19:13 2020
 #
 ##############################################################
 #
@@ -74,14 +74,14 @@ CSET clkout1_requested_out_freq=100
 CSET clkout1_requested_phase=0.000
 CSET clkout2_drives=BUFG
 CSET clkout2_requested_duty_cycle=50.000
-CSET clkout2_requested_out_freq=160
-CSET clkout2_requested_phase=135
+CSET clkout2_requested_out_freq=125
+CSET clkout2_requested_phase=0
 CSET clkout2_used=true
 CSET clkout3_drives=BUFG
 CSET clkout3_requested_duty_cycle=50.000
-CSET clkout3_requested_out_freq=160
+CSET clkout3_requested_out_freq=125
 CSET clkout3_requested_phase=-45
-CSET clkout3_used=true
+CSET clkout3_used=false
 CSET clkout4_drives=BUFG
 CSET clkout4_requested_duty_cycle=50.000
 CSET clkout4_requested_out_freq=100
@@ -189,7 +189,7 @@ CSET mmcm_notes=None
 CSET mmcm_ref_jitter1=0.010
 CSET mmcm_ref_jitter2=0.010
 CSET mmcm_startup_wait=false
-CSET num_out_clks=3
+CSET num_out_clks=2
 CSET override_dcm=false
 CSET override_dcm_clkgen=false
 CSET override_mmcm=false
@@ -197,16 +197,16 @@ CSET override_pll=false
 CSET platform=nt64
 CSET pll_bandwidth=OPTIMIZED
 CSET pll_clk_feedback=CLKFBOUT
-CSET pll_clkfbout_mult=5
+CSET pll_clkfbout_mult=25
 CSET pll_clkfbout_phase=0.000
 CSET pll_clkin_period=6.250
-CSET pll_clkout0_divide=8
+CSET pll_clkout0_divide=5
 CSET pll_clkout0_duty_cycle=0.500
 CSET pll_clkout0_phase=0.000
-CSET pll_clkout1_divide=5
+CSET pll_clkout1_divide=4
 CSET pll_clkout1_duty_cycle=0.500
-CSET pll_clkout1_phase=135.000
-CSET pll_clkout2_divide=5
+CSET pll_clkout1_phase=0.000
+CSET pll_clkout2_divide=4
 CSET pll_clkout2_duty_cycle=0.500
 CSET pll_clkout2_phase=-45.000
 CSET pll_clkout3_divide=80
@@ -219,7 +219,7 @@ CSET pll_clkout5_divide=1
 CSET pll_clkout5_duty_cycle=0.500
 CSET pll_clkout5_phase=0.000
 CSET pll_compensation=SYSTEM_SYNCHRONOUS
-CSET pll_divclk_divide=1
+CSET pll_divclk_divide=8
 CSET pll_notes=None
 CSET pll_ref_jitter=0.010
 CSET power_down_port=POWER_DOWN
@@ -266,4 +266,4 @@ CSET use_status=false
 MISC pkg_timestamp=2012-05-10T12:44:55Z
 # END Extra information
 GENERATE
-# CRC: 7bbcbaa6
+# CRC: 9dd42e06
