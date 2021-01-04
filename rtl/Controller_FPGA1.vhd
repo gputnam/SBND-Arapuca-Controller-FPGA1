@@ -2588,7 +2588,7 @@ iCD <= X"0" & "00" & TstTrigCE & TstTrigEn & '0' & TrigTx_Sel
 		 "000" & LinkFIFORdCnt(0) when LinkWdCnt0Ad,
 		 "000" & LinkFIFORdCnt(1) when LinkWdCnt1Ad,
 		 "000" & LinkFIFORdCnt(2) when LinkWdCnt2Ad,
-		 X"000" & "00" & EventBuff_Full & EventBuff_empty when EvBuffStatAd,
+		 X"000" & EventBuff_RdEn & EventBuff_WrtEn & EventBuff_Full & EventBuff_empty when EvBuffStatAd,
 		 '0' & GtpRxBuffStat(1) & '0' & GtpRxBuffCnt(1) 
 	  & '0' & GtpRxBuffStat(0) & '0' & GtpRxBuffCnt(0) when ElasticStatAd,
 	    DReqBrstCntReg when DReqBrstCntAd,
