@@ -641,7 +641,7 @@ elsif rising_edge (EthClk) then
 ---------------------------------------------------------------------------
 Case Event_Builder is
 	when Idle => --Debug(10 downto 7) <= X"0";
-		if LinkFIFOEmpty /= 7 and FormHold = '0'-- DM TStmp was used in packet former, which has been removed-- and TStmpBuff_Empty = '0' --DG: used  to check if TStmpWds >= 3. Now  the whole timestamp is only in one word, so we only need to check if the buffer has data 
+		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpBuff_Empty = '0' --DG: used  to check if TStmpWds >= 3. Now  the whole timestamp is only in one word, so we only need to check if the buffer has data 
 		 then Event_Builder <= WaitEvent;
 		else Event_Builder <= Idle;
 		end if;
