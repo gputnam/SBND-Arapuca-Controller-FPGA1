@@ -94,6 +94,8 @@ Type Array_3x16 is Array(0 to 2) of std_logic_vector (15 downto 0);
 
 Type Array_3x2x10 is Array (0 to 2) of Array_2x10;
 
+signal ZEthANull0: std_logic;
+
 -- Synchronous edge detectors of uC read and write strobes
 Signal RDDL,WRDL : std_logic_vector (1 downto 0);
 signal EthWRDL,EthRDDL : std_logic_vector (4 downto 0);
@@ -358,7 +360,6 @@ signal TriggerType: TriggerVariant;
 
 -- when to issue trigger
 signal IssueExtNimTrigger: std_logic;
-signal NOTCpldRst:std_logic;
 signal ClkDiv2: std_logic;
 
 --Signals for OT FSM
@@ -458,7 +459,7 @@ Debug(6) <= ExtPPSBuf(1);
 Debug(7) <= '1' when TriggerTimeStampCount = 0 else '0';
 Debug(8) <= '1' when ExtTriggerInhibitCount /= 0 else '0';
 
-
+ZEthANull0 <= '0';
 TrigLED <= '0';
 
 Sys_Pll : SysPll
@@ -504,7 +505,6 @@ TrigFM <= DreqTxOuts.FM when TrigTx_Sel = '1'
 
 DReqTxEn <= '1' when TrigTx_Sel = '1' and DReqBuff_Emtpy = '0' and DreqTxOuts.Done = '0' 
 					  else '0';
-NOTCpldRst <= CpldRst;
 -- DG: TODO: switch to configure DReqBuff source from external trigger/fiber
 --DReqBuff_In <= GTPRxReg(0)   -- TO USE FIBER LINK
 
@@ -515,7 +515,7 @@ NOTCpldRst <= CpldRst;
 -- WAS crossing clock domains from UsrClk to Sysclk
 -- DG - Now dreqs come from triger on io port for SBND
 DReqBuff : FIFO_DC_1kx16
-  PORT MAP (rst => NOTCpldRst,
+  PORT MAP (rst => ResetHI,
     wr_clk => SysClk,
 	 rd_clk => SysClk,
     din => DReqBuff_In,
@@ -534,7 +534,7 @@ DReqBuff_rd_en <= DreqTxOuts.Done when TrigTx_Sel = '1' else DReqBuff_uCRd;
 --     read back by Packet_Former (on UserClk2(0))
 -- Queue up time stamps for later checking
 TimeStampBuff : ExtTrigToFiber
-  PORT MAP (rst => NOTCpldRst,
+  PORT MAP (rst => ResetHI,
     wr_clk => SysClk, -- Clock for recognizing external trigger
 	 rd_clk => EthClk, -- Clock for sending data over fiber
     din => MicrobunchCount, -- DG: change to take in Microbunchcount
@@ -547,7 +547,7 @@ TimeStampBuff : ExtTrigToFiber
 	 
 -- Save External Trigger TimeStamp
 ExtTrigTimeStampBuff : ExtTrigToFiber
-	PORT MAP (rst => NOTCpldRst,
+	PORT MAP (rst => ResetHI,
 	wr_clk => SysClk,
 	rd_clk => EthClk,
 	din => TriggerTimeStampCount,
@@ -1678,7 +1678,7 @@ begin
             GigEx_nCS => ZEthCS,
             GigEx_nWE => ZEthWE,
             GigEx_Addr(9 downto 1) => ZEthA,
-				GigEx_Addr(0) => open,
+				GigEx_Addr(0) => ZEthANull0, --open,
 
             GigEx_nBE => ZEthBE,
             GigEx_Data => DQ,

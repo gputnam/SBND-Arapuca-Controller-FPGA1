@@ -77,7 +77,7 @@ ARCHITECTURE behavior OF Controller_FPGA1_tb IS
 -- Serial control lines for the RJ-45 LEDs
 	LEDSClk,LEDSDat : out std_logic_vector(2 downto 0);
 	LEDLd : out std_logic_vector(5 downto 0);
-	LEDRst : out std_logic;
+	LEDRst : buffer std_logic;
 -- Orange Tree Ethernet daughter card lines
 	DQ : inout std_logic_vector(15 downto 0);
 	ZEthA : buffer std_logic_vector(8 downto 0);
@@ -121,7 +121,7 @@ signal GPI,NimTrig : std_logic;
 signal Debug : std_logic_vector(10 downto 1);
 
 -- Clock period definitions
-constant ClkB_P_period : time := 10 ns;
+constant ClkB_P_period : time := 6.25 ns; -- DG: NEW BOARD!!! 160MHz clock!!!
 constant Clk53Mhz_Period : time := 18.83 ns;
 constant DCO_period : time := 4 ns;
 constant Clk50Mhz_Period : time := 20 ns;
@@ -2604,6 +2604,7 @@ end process;
 Trigger: process
 begin
 NimTrig <= '0';
+
 wait for 375 ns;
 -- send a trigger -- OFF beam
 NimTrig <= '1';
