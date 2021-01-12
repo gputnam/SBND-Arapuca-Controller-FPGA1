@@ -603,6 +603,7 @@ begin
 	-- DG: TODO: where does the reset for the Data Request write come from?
 	-- DReqBuff_wr_en <= '0'; --DANIEL
 	Event_Builder <= Idle;
+	LinkRDDL <= "00"; 
 	LinkFIFORdReq <= (others =>'0'); StatOr <= X"00"; 
 	EvTxWdCnt <= (others => '0'); EvTxWdCntTC <= '0'; EventBuff_RdEn <= '0';
 	FIFOCount <= (others => (others => '0')); EventBuff_WrtEn <= '0';
@@ -619,6 +620,9 @@ begin
 	
 elsif rising_edge (EthClk) then
 
+	if (uCWR = '0' or uCRD = '0') and CpldCS = '0' then AddrReg <= uCA;
+	else AddrReg <= AddrReg;
+	end if;
 -- Store the empty flag values when they make a transition, 
 -- then try and send the updated value
 	if DreqTxOuts.Done = '1'
@@ -626,6 +630,10 @@ elsif rising_edge (EthClk) then
 	else LinkFIFOStatReg <= LinkFIFOStatReg;
 	end if;
 
+
+	LinkRDDL(0) <= not CpldCS and not uCRD;
+	LinkRDDL(1) <= LinkRDDL(0);
+	
 -- DG: Turn off setting TStmpBuff_wr_en on reception of a Data Request packet.
 -- 	 This is now done by the Ext Trig code
 -- -- Store the time stamp subfield from the trigger request packet for later checking

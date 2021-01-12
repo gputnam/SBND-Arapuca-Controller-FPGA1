@@ -2605,26 +2605,26 @@ Trigger: process
 begin
 NimTrig <= '0';
 
-wait for 375 ns;
+wait for 4000 ns;
 -- send a trigger -- OFF beam
 NimTrig <= '1';
 wait for 25 ns;
 NimTrig <= '0';
 
-wait for 300 ns;
+wait;-- for 300 ns;
 
-
--- send a trigger -- ON beam
-NimTrig <= '1';
-wait for 200 ns;
-NimTrig <= '0';
-
-wait for 300 ns;
-
--- send a trigger -- ON beam
-NimTrig <= '1';
-wait for 200 ns;
-NimTrig <= '0';
+--
+---- send a trigger -- ON beam
+--NimTrig <= '1';
+--wait for 200 ns;
+--NimTrig <= '0';
+--
+--wait for 300 ns;
+--
+---- send a trigger -- ON beam
+--NimTrig <= '1';
+--wait for 200 ns;
+--NimTrig <= '0';
 
 end process;
 
@@ -2720,7 +2720,7 @@ uCIO : process
 		  wait for 5 ns;
 --		  uCD <= X"0040";
 			-- turns on IntTmgEn and TstTrigEn
-		  uCD <= X"0141";
+		  uCD <= X"0101";
 --		  uCD <= X"0303";
 		  uCWr <= '0';
 		  wait for 15 ns;
@@ -2838,6 +2838,45 @@ uCIO : process
 		  uCA <= (Others => 'Z');
 		  uCD <= (others => 'Z');
 		  wait for 10 ns;	
+		  
+  wait for 2500 ns;
+		uCA <= "00" & TRigReqBuffAd;
+		  uCD <= (others => 'Z');
+
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 10 ns;
+		  uCRD <= '0';
+		  wait for 50 ns;
+		  uCRD <= '1';
+		  CpldCS <= '1';
+		  wait for 10 ns;
+		  uCA <= (Others => 'Z');
+		  wait for 50 ns;
+			
+
+		  uCA <= "00" & TRigReqBuffAd;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 10 ns;
+		  uCRD <= '0';
+		  wait for 50 ns;
+		  uCRD <= '1';
+		  CpldCS <= '1';
+		  wait for 10 ns;
+		  uCA <= (Others => 'Z');
+		  wait for 50 ns;
+		  		uCA <= "00" & TRigReqBuffAd;
+		  wait for 5 ns;
+		  CpldCS <= '0';
+		  wait for 10 ns;
+		  uCRD <= '0';
+		  wait for 50 ns;
+		  uCRD <= '1';
+		  CpldCS <= '1';
+		  wait for 10 ns;
+		  uCA <= (Others => 'Z');
+		  wait for 50 ns;
 		
 --
 --	wait for 1 us;	
