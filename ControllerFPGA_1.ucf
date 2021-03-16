@@ -191,7 +191,7 @@ NET "LEDLd[0]" LOC = Y21;
 NET "GPO[1]" LOC = F9;
 NET "GPO[0]" LOC = G8;
 NET "GPI" LOC = C22;
-NET "NimTrig" LOC = E20;
+NET "NimTrig" LOC = H18;
 
 # FM tramsmitters for trigger and timing fanout
 NET "HeartBeatFM" LOC = P4;
