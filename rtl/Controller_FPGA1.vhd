@@ -198,10 +198,13 @@ begin
                 -- application closed unexpectedly and left some open
                 -- Write 0 to each connection state then
                 -- read the status for each connection in turn
-                -- Loop round until all statuses are zero.
+                -- (Used to) Loop round until all statuses are zero.
+					 
+					 
+					 --Modified to only clean Channel 0. Other channels controlled by uC.
                 when USER_FPGA_CLEAN =>
                     UserFPGASubState <= UserFPGASubState + 1;
-                    if (UserFPGASubState=X"000f") then
+                    if (UserFPGASubState=X"0001") then
                         UserFPGASubState <= (others=>'0');
                         UserFPGAState <= USER_FPGA_CLEAN_CHECK;
                         Clean <= '1';
@@ -211,7 +214,7 @@ begin
                     if (UserReadDataValid='1' and UserReadData/=X"0000") then
                         Clean <= '0';
                     end if;
-                    if (UserValidCount=X"0010") then
+                    if (UserValidCount=X"0001") then
                         if (Clean='1') then
                             UserFPGASubState <= (others=>'0');
                             UserValidCount <= (others=>'0');
@@ -259,46 +262,16 @@ begin
                         -- Next, check if there is incoming data available
                         UserFPGASubState <= (others=>'0');
                         UserValidCount <= (others=>'0');
-                        if (InterruptStatus(0)='0') then
+                        --if (InterruptStatus(0)='0') then
                             -- There is no data available
                             -- Next, check if there is outgoing data to send
                             UserFPGAState <= USER_FPGA_CHECK_SPACE;
-                        else
+                        --else
                             -- Read frame length
-                            UserFPGAState <= USER_FPGA_READ_LENGTH;
-                        end if;
+                            --UserFPGAState <= USER_FPGA_READ_LENGTH;
+                        --end if;
                     end if;
 
-                -- Check if there is incoming data
-                when USER_FPGA_READ_LENGTH =>
-                    UserFPGASubState <= UserFPGASubState + 1;
-                    if (UserReadDataValid='1' and UserValidCount=X"0000") then
-                        -- Read frame length from GigExpedite
-                        -- Round the number of bytes up to the total number
-                        -- of 16 bit reads we will need to do
-                        UserFPGASubState <= (others=>'0');
-                        UserValidCount <= (others=>'0');
-                        FrameLength <= ('0' & UserReadData(15 downto 1)) + ("000000000000000" & UserReadData(0));
-                        if (UserReadData=X"0000") then
-                            -- Length was zero - skip the read
-                            UserFPGAState <= USER_FPGA_IDLE;
-                        else
-                            -- Got a valid frame length - read the data
-                            UserFPGAState <= USER_FPGA_READ_DATA;
-                        end if;
-                    end if;
-                
-                -- Read data from GigExpedite device
-                when USER_FPGA_READ_DATA =>
-                    UserFPGASubState <= UserFPGASubState + 1;
-                    if (UserValidCount>=FrameLength) then
-                        -- End of frame reached
-                        FrameLength <= (others=>'0');
-                        UserFPGASubState <= (others=>'0');
-                        UserValidCount <= (others=>'0');
-                        UserFPGAState <= USER_FPGA_CHECK_SPACE;
-                    end if;
-                
                 -- Check if there is space in the outgoing GigExpedite buffer
                 -- and we have data to send back to the host
                 when USER_FPGA_CHECK_SPACE =>
@@ -423,30 +396,6 @@ begin
                     UserWriteData <= (CONN_TCP or CONN_ENABLE or LISTEN);
                 end if;
             
-            when USER_FPGA_READ_LENGTH =>
-                -- Read from interrupt status and then frame length register
-                if (UserFPGASubState(3 downto 0)=X"0") then
-                    UserRE <= '1'; 
-                else
-                    UserRE <= '0';
-                end if;
-                UserWE <= '0';
-                UserBE <= "11";
-                UserAddr <= '0' & X"0" & FRAME_LENGTH;
-                UserWriteData <= (others=>'0');
-                
-            when USER_FPGA_READ_DATA =>
-                -- Read from connection FIFO
-                if (UserFPGASubState<FrameLength) then
-                    UserRE <= '1';
-                else
-                    UserRE <= '0';
-                end if;
-                UserWE <= '0';
-                UserBE <= "11";
-                UserAddr <= '0' & X"0" & DATA_FIFO;
-                UserWriteData <= (others=>'0');
-
             when USER_FPGA_CHECK_SPACE =>
                 -- No access necessary
                 UserRE <= '0';
