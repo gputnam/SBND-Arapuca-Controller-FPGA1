@@ -1,5 +1,5 @@
 -- Firmware to test OT connection on main FPGA on ROC
--- Daniel Mishins, with parts copied from code from Sten Hansen
+-- Modified from OT example code by Daniel Mishins, with parts copied from code by Sten Hansen
 
 
 
@@ -198,13 +198,11 @@ begin
                 -- application closed unexpectedly and left some open
                 -- Write 0 to each connection state then
                 -- read the status for each connection in turn
-                -- (Used to) Loop round until all statuses are zero.
-					 
-					 
-					 --Modified to only clean Channel 0. Other channels controlled by uC.
+                -- Loop round until all statuses are zero.
+					 -- (un) Modified to only clean Channel 0. Other channels controlled by uC.
                 when USER_FPGA_CLEAN =>
                     UserFPGASubState <= UserFPGASubState + 1;
-                    if (UserFPGASubState=X"0001") then
+                    if (UserFPGASubState=X"000f") then
                         UserFPGASubState <= (others=>'0');
                         UserFPGAState <= USER_FPGA_CLEAN_CHECK;
                         Clean <= '1';
@@ -214,7 +212,7 @@ begin
                     if (UserReadDataValid='1' and UserReadData/=X"0000") then
                         Clean <= '0';
                     end if;
-                    if (UserValidCount=X"0001") then
+                    if (UserValidCount=X"0010") then
                         if (Clean='1') then
                             UserFPGASubState <= (others=>'0');
                             UserValidCount <= (others=>'0');
