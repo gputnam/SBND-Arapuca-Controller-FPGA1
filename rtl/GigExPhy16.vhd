@@ -58,7 +58,7 @@ entity GigExPhy16 is
     );
     port (
         CLK : in std_logic;
-        Debug : out std_logic_vector(4 downto 1);
+        
         -- Interface to GigExpedite
         GigEx_Clk : out std_logic;
         GigEx_nCS : out std_logic;
@@ -138,8 +138,7 @@ architecture arch of GigExPhy16 is
     attribute IOB of nWEInst : label is "FORCE";
 
 begin
-	Debug(4 downto 3) <= (others => '0');
-	--Debug(2) <= CLK;
+
     -- Output clock with DDR FF to give predictable timing
     nCLK <= not CLK;
     ClockOutInst : ODDR2
@@ -150,22 +149,6 @@ begin
         )
         port map (
             Q => GigEx_Clk,
-            C0 => CLK,
-            C1 => nCLK,
-            CE => '1',
-            D0 => '0',
-            D1 => '1',
-            R => '0',
-            S => '0'
-        );
-    DebugClockOutInst : ODDR2
-        generic map (
-            DDR_ALIGNMENT => "NONE",
-            INIT => '0',
-            SRTYPE => "SYNC"
-        )
-        port map (
-            Q => Debug(1),
             C0 => CLK,
             C1 => nCLK,
             CE => '1',
@@ -489,7 +472,7 @@ begin
             UserValidLength <= User_ReadLengthN;
             UserReadDataValid <= ReadDelay(4);
             UserValidOwner <= Owner(4);
-        elsif (CLOCK_RATE<105000000) then
+        elsif (CLOCK_RATE<130000000) then
             UserReadData <= User_ReadDataP;
             UserValidEOF <= User_ReadEOFP;
             UserValidHeader <= User_ReadHeaderP;
@@ -506,11 +489,5 @@ begin
         end if;
     end process;
 		
-    -- Register interrupt line from GigExpedite
-    process (CLK) begin
-        if (CLK'event and CLK='1') then
-            UserInterrupt <= not GigEx_nInt;
-        end if;
-    end process;
 
 end arch;
