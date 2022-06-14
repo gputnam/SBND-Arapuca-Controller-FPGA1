@@ -121,7 +121,7 @@ signal GPI,NimTrig : std_logic;
 signal Debug : std_logic_vector(10 downto 1);
 
 -- Clock period definitions
-constant ClkB_P_period : time := 10 ns;
+constant ClkB_P_period : time := 6.25 ns;
 constant Clk53Mhz_Period : time := 18.83 ns;
 constant DCO_period : time := 4 ns;
 constant Clk50Mhz_Period : time := 20 ns;
@@ -2651,11 +2651,11 @@ uCIO : process
 
 	wait for 1 us;	
 
-		  uCA <= "00" & ActvRegAddrHi;
+		  uCA <= "00" & TestCounterLoAd;
 		  wait for 5 ns;
 		  CpldCS <= '0';
 		  wait for 5 ns;
-		  uCD <= X"0000";
+		  uCD <= X"1234";
 		  uCWr <= '0';
 		  wait for 15 ns;
 		  uCWr <= '1';
@@ -2666,12 +2666,13 @@ uCIO : process
 		  wait for 10 ns;
 	wait for 100 ns;	
 
-		  uCA <= "00" & ActvRegAddrLo;
+		  uCA <= "00" & TestCounterLoAd;
 		  wait for 5 ns;
 		  CpldCS <= '0';
 		  wait for 5 ns;
-		  uCD <= X"0101";
-		  uCWr <= '0';
+		  uCD <= (others => 'Z');
+		  uCWr <= '1';
+		  uCRd <= '0';
 		  wait for 15 ns;
 		  uCWr <= '1';
 		  CpldCS <= '1';
@@ -2712,86 +2713,86 @@ uCIO : process
 		  wait for 10 ns;
 
 	wait for 1 us;	
-
-		  uCA <= "00" & CSRRegAddr;
-		  wait for 5 ns;
-		  CpldCS <= '0';
-		  wait for 5 ns;
---		  uCD <= X"0040";
-			-- turns on IntTmgEn and TstTrigEn
-		  uCD <= X"0141";
---		  uCD <= X"0303";
-		  uCWr <= '0';
-		  wait for 15 ns;
-		  uCWr <= '1';
-		  CpldCS <= '1';
-		  wait for 5 ns;
-		  uCA <= (Others => 'Z');
-		  uCD <= (others => 'Z');
-		  wait for 10 ns;
-		  
-	wait for 200 ns;
-		  uCA <= "00" & ExternalTriggerControlAddress;
-		  wait for 5 ns;
-		  CpldCS <= '0';
-		  wait for 5 ns;
-		  -- Periodic Microbunch ON, reset Ext Trig timestamp ON, Pulse detect gate 15	
-		  uCD <= X"00FC";
-		  uCWr <= '0';
-		  wait for 15 ns;
-		  uCWr <= '1';
-		  CpldCS <= '1';
-		  wait for 5 ns;
-		  uCA <= (Others => 'Z');
-		  uCD <= (others => 'Z');
-		  wait for 10 ns;	
-	wait for 50 ns;
-		  uCA <= "00" & PeriodicMicrobunchPeriodAddrLo;
-		  wait for 5 ns;
-		  CpldCS <= '0';
-		  wait for 5 ns;
-		  uCD <= X"000F";
-		  uCWr <= '0';
-		  wait for 15 ns;
-		  uCWr <= '1';
-		  CpldCS <= '1';
-		  wait for 5 ns;
-		  uCA <= (Others => 'Z');
-		  uCD <= (others => 'Z');
-		  wait for 10 ns;	
-		  
-	-- turn external trigger generation of microbunches back on
-	wait for 500 ns;
-		  uCA <= "00" & ExternalTriggerControlAddress;
-		  wait for 5 ns;
-		  CpldCS <= '0';
-		  wait for 5 ns;
-		  -- Periodic Microbunch OFF, reset Ext Trig timestamp ON, Pulse detect gate 15	
-		  uCD <= X"00F8";
-		  uCWr <= '0';
-		  wait for 15 ns;
-		  uCWr <= '1';
-		  CpldCS <= '1';
-		  wait for 5 ns;
-		  uCA <= (Others => 'Z');
-		  uCD <= (others => 'Z');
-		  wait for 10 ns;	
-	-- start inhibit triggers
-	wait for 100 ns;
-		uCA <= "00" & ExternalTriggerInhibitAddrLo;
-		  wait for 5 ns;
-		  CpldCS <= '0';
-		  wait for 5 ns;
-		  uCD <= X"003C";
-		  uCWr <= '0';
-		  wait for 15 ns;
-		  uCWr <= '1';
-		  CpldCS <= '1';
-		  wait for 5 ns;
-		  uCA <= (Others => 'Z');
-		  uCD <= (others => 'Z');
-		  wait for 10 ns;	
-		  
+--
+--		  uCA <= "00" & CSRRegAddr;
+--		  wait for 5 ns;
+--		  CpldCS <= '0';
+--		  wait for 5 ns;
+----		  uCD <= X"0040";
+--			-- turns on IntTmgEn and TstTrigEn
+--		  uCD <= X"0141";
+----		  uCD <= X"0303";
+--		  uCWr <= '0';
+--		  wait for 15 ns;
+--		  uCWr <= '1';
+--		  CpldCS <= '1';
+--		  wait for 5 ns;
+--		  uCA <= (Others => 'Z');
+--		  uCD <= (others => 'Z');
+--		  wait for 10 ns;
+--		  
+--	wait for 200 ns;
+--		  uCA <= "00" & ExternalTriggerControlAddress;
+--		  wait for 5 ns;
+--		  CpldCS <= '0';
+--		  wait for 5 ns;
+--		  -- Periodic Microbunch ON, reset Ext Trig timestamp ON, Pulse detect gate 15	
+--		  uCD <= X"00FC";
+--		  uCWr <= '0';
+--		  wait for 15 ns;
+--		  uCWr <= '1';
+--		  CpldCS <= '1';
+--		  wait for 5 ns;
+--		  uCA <= (Others => 'Z');
+--		  uCD <= (others => 'Z');
+--		  wait for 10 ns;	
+--	wait for 50 ns;
+--		  uCA <= "00" & PeriodicMicrobunchPeriodAddrLo;
+--		  wait for 5 ns;
+--		  CpldCS <= '0';
+--		  wait for 5 ns;
+--		  uCD <= X"000F";
+--		  uCWr <= '0';
+--		  wait for 15 ns;
+--		  uCWr <= '1';
+--		  CpldCS <= '1';
+--		  wait for 5 ns;
+--		  uCA <= (Others => 'Z');
+--		  uCD <= (others => 'Z');
+--		  wait for 10 ns;	
+--		  
+--	-- turn external trigger generation of microbunches back on
+--	wait for 500 ns;
+--		  uCA <= "00" & ExternalTriggerControlAddress;
+--		  wait for 5 ns;
+--		  CpldCS <= '0';
+--		  wait for 5 ns;
+--		  -- Periodic Microbunch OFF, reset Ext Trig timestamp ON, Pulse detect gate 15	
+--		  uCD <= X"00F8";
+--		  uCWr <= '0';
+--		  wait for 15 ns;
+--		  uCWr <= '1';
+--		  CpldCS <= '1';
+--		  wait for 5 ns;
+--		  uCA <= (Others => 'Z');
+--		  uCD <= (others => 'Z');
+--		  wait for 10 ns;	
+--	-- start inhibit triggers
+--	wait for 100 ns;
+--		uCA <= "00" & ExternalTriggerInhibitAddrLo;
+--		  wait for 5 ns;
+--		  CpldCS <= '0';
+--		  wait for 5 ns;
+--		  uCD <= X"003C";
+--		  uCWr <= '0';
+--		  wait for 15 ns;
+--		  uCWr <= '1';
+--		  CpldCS <= '1';
+--		  wait for 5 ns;
+--		  uCA <= (Others => 'Z');
+--		  uCD <= (others => 'Z');
+--		  wait for 10 ns;	
+--		  
 	wait for 100 ns;
 			uCA <= "00" & PLLHiAddr;
 		  wait for 5 ns;

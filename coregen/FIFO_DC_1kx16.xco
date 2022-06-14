@@ -1,7 +1,7 @@
 ##############################################################
 #
 # Xilinx Core Generator version 14.7
-# Date: Thu Jun  4 00:56:22 2020
+# Date: Mon Jun  6 17:43:21 2022
 #
 ##############################################################
 #
@@ -52,8 +52,8 @@ CSET buser_width=1
 CSET clock_enable_type=Slave_Interface_Clock_Enable
 CSET clock_type_axi=Common_Clock
 CSET component_name=FIFO_DC_1kx16
-CSET data_count=false
-CSET data_count_width=10
+CSET data_count=true
+CSET data_count_width=11
 CSET disable_timing_violations=false
 CSET disable_timing_violations_axi=false
 CSET dout_reset_value=0
@@ -103,7 +103,7 @@ CSET fifo_application_type_rdch=Data_FIFO
 CSET fifo_application_type_wach=Data_FIFO
 CSET fifo_application_type_wdch=Data_FIFO
 CSET fifo_application_type_wrch=Data_FIFO
-CSET fifo_implementation=Independent_Clocks_Block_RAM
+CSET fifo_implementation=Common_Clock_Block_RAM
 CSET fifo_implementation_axis=Common_Clock_Block_RAM
 CSET fifo_implementation_rach=Common_Clock_Block_RAM
 CSET fifo_implementation_rdch=Common_Clock_Block_RAM
@@ -167,7 +167,7 @@ CSET programmable_full_type_wrch=No_Programmable_Full_Threshold
 CSET rach_type=FIFO
 CSET rdch_type=FIFO
 CSET read_clock_frequency=1
-CSET read_data_count=true
+CSET read_data_count=false
 CSET read_data_count_width=11
 CSET register_slice_mode_axis=Fully_Registered
 CSET register_slice_mode_rach=Fully_Registered
@@ -210,4 +210,4 @@ CSET wuser_width=1
 MISC pkg_timestamp=2012-11-19T12:39:56Z
 # END Extra information
 GENERATE
-# CRC:  f432843
+# CRC: dc9c5b37
