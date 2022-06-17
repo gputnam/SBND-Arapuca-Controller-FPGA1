@@ -215,7 +215,7 @@ signal TriggerTimestampCounter : std_logic_vector(31 downto 0);
 -- Trigger request packet buffer, FIFO status bits
 signal DReqBuff_Out, DReqBuff_In : std_logic_vector (15 downto 0);
 signal DReqBuff_wr_en,DReqBuff_rd_en,DReqBuff_uCRd, DCSPktBuff_uCRd,
-		 DReqBuff_Full,TrigTx_Sel,DReqBuff_Emtpy,
+		 DReqBuff_Full,DReqBuff_Emtpy,
 		 Dreq_Tx_Req,Dreq_Tx_ReqD,DReq_Tx_Ack,BmOnTrigReq,Stat_DReq : std_logic;
 		 
 signal TrgPktCnt : std_logic_vector (10 downto 0);
@@ -327,7 +327,10 @@ EventBuff: FIFO_SC_4Kx16
       full => EventBuff_Full,
 	   empty => EventBuff_Empty);
 
--- GTP event handling process
+--TrigFM port is not used as a FM transmitter, but instead as a flag for link fifo recieve status, to allow data to be sent to front fpga.
+TrigFM <= LinkBusy;
+
+-- Data packetizing and request process
 TrigReqTx : process (SysClk, CpldRst)
 
 begin
@@ -490,16 +493,7 @@ else StatOr <= StatOr; Stat0 <= Stat0;
 end if;
 
 --Copy port activity bits from the other FPGAs to this register
-if TrigTx_Sel = '1' 
-   then 
-		if WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ActvRegAddrHi 
-		  then ActiveReg <= uCD(7 downto 0) & ActiveReg(15 downto 0);
-	 elsif WRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = ActvRegAddrLo 
-		then ActiveReg <= ActiveReg(23 downto 16) & uCD;
-	  else ActiveReg <= ActiveReg;
-	 end if;
-   else ActiveReg <= FPGA234_Active(2) & FPGA234_Active(1) & FPGA234_Active(0);
-end if;
+ActiveReg <= FPGA234_Active(2) & FPGA234_Active(1) & FPGA234_Active(0);
 
 -- Count down the words read from each of the link FIFOs
 	if Event_Builder = RdInWdCnt0 then FIFOCount(0) <= LinkFIFOOut(0) - 2;
@@ -1045,7 +1039,6 @@ begin
 		TDisA <= '0';
 		TDisB <= '0';
 		GPO(1) <= '0';
-		TrigFM <= '0';
 		
 		-- Synchronous edge detectors for various strobes
 		RDDL <= "00"; WRDL <= "00"; 
