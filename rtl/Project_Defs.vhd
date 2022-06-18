@@ -48,7 +48,7 @@ Type GTPAddr_Array is Array(0 to 5) of AddrPtr;
 constant GTPWrtAddr : GTPAddr_Array := ("00" & X"1A","00" & X"1B","00" & X"1C",
 													 "00" & X"1D","00" & X"1E","00" & X"1F");
 constant GTPRdAddr0 : AddrPtr  := "00" & X"20";
-constant GTPRdAddr1 : AddrPtr  := "00" & X"21";
+constant EvBuffAd : AddrPtr  := "00" & X"21";
 
 constant GTPSeqStatAd : AddrPtr  := "00" & X"22";
 
@@ -88,6 +88,7 @@ constant SpillTrigCntAdLo : AddrPtr := "00" & X"67";
 
 constant SpillCountAddr : AddrPtr   := "00" & X"68";
 constant EVWdCntAddr : AddrPtr  := "00" & X"69";
+constant EventLengthAd : AddrPtr  := "00" & X"6E";
 
 constant SpillWdCntHiAd : AddrPtr   := "00" & X"6A";
 constant SpillWdCntLoAd : AddrPtr   := "00" & X"6B";
@@ -222,7 +223,6 @@ port
   CLK_OUT1          : out    std_logic;
   CLK_OUT2          : out    std_logic;
   CLK_OUT3          : out    std_logic;
-  CLK_OUT4          : out    std_logic;
   -- Status and control signals
   RESET             : in     std_logic;
   LOCKED            : out    std_logic
@@ -240,6 +240,20 @@ COMPONENT FIFO_SC_1kx16
     full : OUT STD_LOGIC;
     empty : OUT STD_LOGIC;
     data_count : OUT STD_LOGIC_VECTOR(10 DOWNTO 0)
+  );
+END COMPONENT;
+
+COMPONENT uBunchBuff
+  PORT (
+    clk : IN STD_LOGIC;
+    rst : IN STD_LOGIC;
+    din : IN STD_LOGIC_VECTOR(47 DOWNTO 0);
+    wr_en : IN STD_LOGIC;
+    rd_en : IN STD_LOGIC;
+    dout : OUT STD_LOGIC_VECTOR(47 DOWNTO 0);
+    full : OUT STD_LOGIC;
+    empty : OUT STD_LOGIC;
+    data_count : OUT STD_LOGIC_VECTOR(9 DOWNTO 0)
   );
 END COMPONENT;
 
@@ -293,12 +307,20 @@ COMPONENT TrigPktBuff
 END COMPONENT;
 
 
-component FIFO_SC_4Kx16
-  port (clk,rst,wr_en,rd_en : in std_logic;
-    din : in std_logic_vector(15 downto 0);
-    dout : out std_logic_vector(15 downto 0);
-    full,empty : out std_logic);
-end component;
+COMPONENT FIFO_DC_8kx16
+  PORT (
+    rst : IN STD_LOGIC;
+    wr_clk : IN STD_LOGIC;
+    rd_clk : IN STD_LOGIC;
+    din : IN STD_LOGIC_VECTOR(15 DOWNTO 0);
+    wr_en : IN STD_LOGIC;
+    rd_en : IN STD_LOGIC;
+    dout : OUT STD_LOGIC_VECTOR(15 DOWNTO 0);
+    full : OUT STD_LOGIC;
+    empty : OUT STD_LOGIC;
+    rd_data_count : OUT STD_LOGIC_VECTOR(13 DOWNTO 0)
+  );
+END COMPONENT;
 
 -- DPRam storing FEB indentifiers for this controller
 component FEBIDListRam

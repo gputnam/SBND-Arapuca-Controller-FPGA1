@@ -62,12 +62,12 @@ entity ControllerFPGA_1 is port(
 	LEDLd : out std_logic_vector(5 downto 0);
 	LEDRst : buffer std_logic;
 -- Orange Tree Ethernet daughter card lines
-	DQ : inout std_logic_vector(15 downto 0);
-	ZEthA : buffer std_logic_vector(8 downto 0);
-	ZEthCS,ZEthWE,ZEthClk : buffer std_logic;
-	ZEthBE : buffer std_logic_vector(1 downto 0);
-	ZEthEOF : in std_logic_vector(1 downto 0);
-	ZEthLen : in std_logic;
+	GigEx_Data : inout std_logic_vector(15 downto 0);
+	GigEx_Addr : out std_logic_vector(8 downto 0);
+	GigEx_nCS,GigEx_nWE,GigEx_Clk : out std_logic;
+	GigEx_nBE : out std_logic_vector(1 downto 0);
+	GigEx_EOF : in std_logic_vector(1 downto 0);
+	GigEx_Length : in std_logic;
 -- Back panel LEMOs
 	GPO : buffer std_logic_vector(1 downto 0);
 	GPI,NimTrig : in std_logic;
@@ -104,17 +104,81 @@ Signal FMRDDL,FMWRDL : std_logic_vector (1 downto 0);
 signal EthWRDL,EthRDDL : std_logic_vector (4 downto 0);
 
 -- Clock and reset signals
-signal Buff_Rst,SysClk,Clk80MHz,FMGenClk,ResetHi,Pll_Locked,nEthClk,
+signal Buff_Rst,SysClk,Clk80MHz,FMGenClk,ResetHi,Pll_Locked,
 		 EthClk,SerdesRst,LinkBuffRst,GTPRst, Seq_Rst : std_logic;
 
 -- Counter that determines the trig out pulse width
 signal GPOCount : std_logic_vector(2 downto 0);
 
 -- Orange tree signals
-signal iDQ : std_logic_vector (15 downto 0);
-Signal DQWrtDly : Array_3x16;
-signal DQEn : std_logic;
+    -- Declare constants
+    
+    -- GigExpedite register addresses
+    constant LOCAL_IP_ADDR_HIGH         : std_logic_vector(9 downto 0) := "1000000000";
+    constant LOCAL_IP_ADDR_LOW          : std_logic_vector(9 downto 0) := "1000000010";
+    constant LINK_STATUS                : std_logic_vector(9 downto 0) := "1000000100";
+    
+    -- Per channel registers
+    constant LOCAL_PORT               : std_logic_vector(4 downto 0) := "00000";
+    constant REMOTE_IP_ADDR_HIGH      : std_logic_vector(4 downto 0) := "00010";
+    constant REMOTE_IP_ADDR_LOW       : std_logic_vector(4 downto 0) := "00100";
+    constant REMOTE_PORT              : std_logic_vector(4 downto 0) := "00110";
+    constant MTU_TTL                  : std_logic_vector(4 downto 0) := "01000";
+    constant INTERRUPT_ENABLE_STATUS  : std_logic_vector(4 downto 0) := "01010";
+    constant CONNECTION_STATE         : std_logic_vector(4 downto 0) := "01100";
+    constant FRAME_LENGTH             : std_logic_vector(4 downto 0) := "01110";
+    constant DATA_FIFO                : std_logic_vector(4 downto 0) := "10000";
+    
+    -- Connection states (for CONNECTION_STATE reg)
+    constant CLOSED       : std_logic_vector(15 downto 0) := X"0000";
+    constant LISTEN       : std_logic_vector(15 downto 0) := X"0001";
+    constant CONNECT      : std_logic_vector(15 downto 0) := X"0002";
+    constant ESTABLISHED  : std_logic_vector(15 downto 0) := X"0003";
+    constant CONN_TCP     : std_logic_vector(15 downto 0) := X"0010";
+    constant CONN_ENABLE  : std_logic_vector(15 downto 0) := X"0020";
+    
+    -- Interrupt enable and status bits (for INTERRUPT_ENABLE_STATUS reg)
+    constant IE_INCOMING          : std_logic_vector(15 downto 0) := X"0001";
+    constant IE_OUTGOING_EMPTY    : std_logic_vector(15 downto 0) := X"0002";
+    constant IE_OUTGOING_NOT_FULL : std_logic_vector(15 downto 0) := X"0004";
+    constant IE_STATE             : std_logic_vector(15 downto 0) := X"0008";
 
+    -- Test transfer length
+    --constant WRITE_LENGTH : std_logic_vector(31 downto 0) := conv_std_logic_vector(500*1024*1024, 32);
+
+    --------------------------------------------------------------------------
+    -- Declare signals
+
+    signal UserWE : std_logic;
+    signal UserRE : std_logic;
+    signal UserAddr : std_logic_vector(9 downto 0);
+    signal UserBE : std_logic_vector(1 downto 0);
+    signal UserWriteData : std_logic_vector(15 downto 0);
+    signal UserReadData : std_logic_vector(15 downto 0);
+    signal UserReadDataValid : std_logic;
+    signal UserInterrupt : std_logic;
+
+    type STATE_TYPE is (
+        USER_FPGA_DELAY_INIT,
+        USER_FPGA_CHECK_STATE,
+        USER_FPGA_CHECK_SPACE,
+        USER_FPGA_WRITE_DATA
+
+    );
+    signal UserFPGAState : STATE_TYPE;
+    signal Delay : std_logic_vector(23 downto 0);
+    signal UserFPGASubState : std_logic_vector(15 downto 0);
+    signal UserValidCount : std_logic_vector(15 downto 0);
+    signal ConnectionState : std_logic_vector(5 downto 0);
+    signal InterruptStatus : std_logic_vector(15 downto 0);
+    signal FrameLength : std_logic_vector(15 downto 0);
+    signal Clean : std_logic;
+    signal RampData : std_logic_vector(15 downto 0);
+    signal WriteCount : std_logic_vector(31 downto 0);
+    signal EventLength : std_logic_vector(15 downto 0);
+	 	 
+	 signal Unused_addr_0 : std_logic; --leaving part of the port open is apparently invalid. This fixes simulation
+	 
 -- uC data bus
 signal iCD : std_logic_vector(15 downto 0);
 signal AddrReg : std_logic_vector(11 downto 0);
@@ -150,9 +214,11 @@ signal LinkFIFOOut : Array_3x16;
 signal EventBuff_WrtEn,EventBuff_RdEn,
 		 EventBuff_Full,EventBuff_Empty,EvBuffWrtGate : std_logic;
 signal EventBuff_Dat,EventBuff_Out,EventSum : std_logic_vector (15 downto 0);
+signal EvBuffWrdsUsed : STD_LOGIC_VECTOR(13 DOWNTO 0);
+
 signal FIFOCount : Array_3x16;
 --signal to stop the event builder from running.
-signal FormHold, FormRst : std_logic;
+signal FormHold, FormRst, EthSendHold : std_logic;
 
 Type Event_Builder_Seq is (Idle,RdInWdCnt0,RdInWdCnt1,RdInWdCnt2,SumWdCnt,WrtWdCnt,RdStat0,
 								   RdStat1,RdStat2,WrtStat,WaitEvent,ReadFIFO0,ReadFIFO1,ReadFIFO2);
@@ -227,10 +293,17 @@ Type Trig_Tx_State is (Idle,SenduBunch0,SenduBunch1,
 								SendHdr);
 signal IntTrigSeq : Trig_Tx_State;
 
--- Time stamp FIFO
+-- Time stamp  FIFO
 signal TStmpBuff_Out : std_logic_vector (31 downto 0);
 signal TStmpBuff_wr_en,TStmpBuff_rd_en,TStmpBuff_Full,TStmpBuff_Emtpy : std_logic;
 signal TStmpWds : std_logic_vector (10 downto 0);
+
+
+--  UbunchBuff FIFO
+
+signal uBunchBuffOut : std_logic_vector (47 downto 0);
+signal uBunchBuffWr_en, uBunchBuffRd_en,uBunchBuffFull,uBunchBuffEmpty: std_logic;
+signal uBunchBuffCount : std_logic_vector (9 downto 0);
 
 -- FEB active register
 signal ActiveReg : std_logic_vector (23 downto 0);
@@ -258,8 +331,7 @@ Sys_Pll : SysPll
 -- Clock out ports
     CLK_OUT1 => SysClk,   -- 100 MHz
     CLK_OUT2 => EthClk,   -- 125 MHz used for Orange Tree I/O
-	 CLK_OUT3 => nEthClk,  -- 125 MHz 180 deg. phase fro DDR In
-	 CLK_OUT4 => Clk80MHz, -- 80 MHz for 20mbit FM transmitter
+	 CLK_OUT3 => Clk80MHz, -- 80 MHz for 20mbit FM transmitter
 -- Status and control signals
     RESET  => ResetHi,
     LOCKED => Pll_Locked);
@@ -293,6 +365,18 @@ DReqBuff : FIFO_SC_1kx16
     data_count => TrgPktCnt
   );
 
+uBunchTrigBuff : uBunchBuff
+  PORT MAP (
+    clk => Clk80MHz,
+    rst => ResetHI,
+    din => uBunchCount,
+    wr_en => uBunchBuffWr_en,
+    rd_en => uBunchBuffRd_en,
+    dout => uBunchBuffOut,
+    full => uBunchBuffFull,
+    empty => uBunchBuffEmpty,
+    data_count => uBunchBuffCount
+  );
 
 -- Queue up time stamps for later checking
 TimeStampBuff : TrigPktBuff
@@ -317,16 +401,21 @@ FEBIDList : FEBIDListRam
     addrb => FEBID_addrb,
     doutb => FEBID_doutb);
 
-EventBuff: FIFO_SC_4Kx16
-  port map (clk => SysClk,
-		rst => ResetHi,
-		wr_en => EventBuff_WrtEn,
-		rd_en => EventBuff_RdEn,
-      din => EventBuff_Dat,
-      dout => EventBuff_Out,
-      full => EventBuff_Full,
-	   empty => EventBuff_Empty);
-
+EventBuff : FIFO_DC_8kx16
+  PORT MAP (
+    rst => ResetHI,
+    wr_clk => SysClk,
+    rd_clk => EthClk,
+    din => EventBuff_Dat,
+    wr_en => EventBuff_WrtEn,
+    rd_en => EventBuff_RdEn,
+    dout => EventBuff_Out,
+    full => EventBuff_Full,
+    empty => EventBuff_Empty,
+    rd_data_count => EvBuffWrdsUsed
+  );
+  
+  
 --TrigFM port is not used as a FM transmitter, but instead as a flag for link fifo recieve status, to allow data to be sent to front fpga.
 TrigFM <= LinkBusy;
 
@@ -339,11 +428,11 @@ begin
 
 	Event_Builder <= Idle;
 	LinkFIFORdReq <= (others =>'0'); StatOr <= X"00";  Stat0 <= X"00";
-	EventBuff_RdEn <= '0';
 	FIFOCount <= (others => (others => '0')); EventBuff_WrtEn <= '0';
 	ActiveReg <= X"000000"; LinkFIFOStatReg <= "000";
 	AddrReg <= (others =>'0');
-	FormHold <= '1'; -- in this version of the firmware, event builder won't run.
+	FormHold <= '0'; 
+	EthSendHold <= '0'; 
 	FormRst <= '0';
 
 elsif rising_edge (SysClk) then
@@ -358,6 +447,16 @@ elsif rising_edge (SysClk) then
 	LinkRDDL(0) <= not CpldCS and not uCRD;
 	LinkRDDL(1) <= LinkRDDL(0);
 
+	if WRDL = 1 and  uCA(11 downto 10) = GA and uCA(9 downto 0) = CSRRegAddr
+	then
+		EthSendHold <= uCD(1);
+		FormHold <= uCD(2);
+		FormRst <= uCD(7);
+	else
+		EthSendHold <= EthSendHold;
+		FormHold <= FormHold;
+		FormRst <= '0';
+	end if;
 
 ---------------------------------------------------------------------------
 -- Idle,RdInWdCnt0,RdInWdCnt1,RdInWdCnt2,SumWdCnt,WrtWdCnt,RdStat0,
@@ -365,7 +464,7 @@ elsif rising_edge (SysClk) then
 ---------------------------------------------------------------------------
 Case Event_Builder is
 	when Idle => --Debug(10 downto 7) <= X"0";
-		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpWds >= 3 
+		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpBuff_Emtpy = '0'
 		 then Event_Builder <= WaitEvent;
 		else Event_Builder <= Idle;
 		end if;
@@ -548,10 +647,7 @@ ActiveReg <= FPGA234_Active(2) & FPGA234_Active(1) & FPGA234_Active(0);
   else EventBuff_WrtEn <= '0';  --Debug(6) <= '0';
  end if;
 
-if (1 = 0)
-then EventBuff_RdEn <= '1';  --Debug(9) <= '1';
-else EventBuff_RdEn <= '0';  --Debug(9) <= '0';
-end if;
+
 
 --Debug(4) <= EventBuff_Empty;
 
@@ -807,104 +903,221 @@ LinkBuffRst <= '1' when CpldRst = '0'
 ResetHi <= not CpldRst;  -- Generate and active high reset for the Xilinx macros
 
 ----------------------- Orange tree interface logic -----------------------------
+ -- Instantiate GigEx interface physical layer
+ GigExPhyInst : entity work.GigExPhy16 
+	  generic map (
+			CLOCK_RATE => 125000000
+	  )
+	  port map (
+			CLK => EthClk,
+			
+			GigEx_Clk => GigEx_Clk,
+			GigEx_nCS => GigEx_nCS,
+			GigEx_nWE => GigEx_nWE,
+			GigEx_Addr (9 downto 1) => GigEx_Addr,
+				GigEx_Addr(0) => Unused_addr_0,
+			GigEx_nBE => GigEx_nBE,
+			GigEx_Data => GigEx_Data,
+			GigEx_EOF => GigEx_EOF,
+			GigEx_Length => GigEx_Length,
+			GigEx_Header => '0',
+			GigEx_nInt => '0',
 
- DQ <= DQWrtDly(2) when DQEn = '1' else (others => 'Z'); 
-iDQ <= DQ when EthRDDL(4 downto 3) = 1 else iDQ;
-
-EthProc : process(EthClk, CpldRst)
-
- begin 
-
--- asynchronous reset/preset
- if CpldRst = '0' then
-
-	ZEthClk <= '0'; EthWRDL <= (others => '0');
-	DQWrtDly <= (others => (others => '0'));
-	ZEthA <= (others => '0'); DQEn <= '0';
-	ZEthCS <= '1'; ZEthWE <= '1'; 
-	ZEthBE <= "11"; EthRDDL <= (others => '0');
-	GPO(0) <= '0'; 
-
- elsif rising_edge (EthClk) then 
+			UserWE => UserWE,
+			UserRE => UserRE,
+			UserAddr => UserAddr,
+			UserBE => UserBE,
+			UserWriteData => UserWriteData,
+			UserOwner => X"00",
+			UserReadData => UserReadData,
+			UserReadDataValid => UserReadDataValid,
+			UserInterrupt => open
+	  );
 
 
-	ZEthClk <= not ZEthClk;
 
--- Strobe timing delay chains
--- Write strobe timer
-	if ZEthClk = '1' then
-	 EthWRDL(0) <= not EthCS and not uCWR;
-	 EthWRDL(1) <= EthWRDL(0);
-	 EthWRDL(2) <= EthWRDL(1);
-	 EthWRDL(3) <= EthWRDL(2);
-	 EthWRDL(4) <= EthWRDL(3);
-	else EthWRDL <= EthWRDL;
-	end if; 
 
--- Read strobe timer
-	if ZEthClk = '1' then
-	 EthRDDL(0) <= not EthCS and not uCRD;
-	 EthRDDL(1) <= EthRDDL(0);
-	 EthRDDL(2) <= EthRDDL(1);
-	 EthRDDL(3) <= EthRDDL(2);
-	 EthRDDL(4) <= EthRDDL(3);
-	else EthRDDL <= EthRDDL;
-	end if; 
+-- State machine to read/write Ethernet
+EthProcess: process (ResetHi, EthClk) begin
+  if (ResetHi='1') then
+		UserFPGAState <= USER_FPGA_DELAY_INIT;
+		Delay <= (others=>'0');
+		UserFPGASubState <= (others=>'0');
+		UserValidCount <= (others=>'0');
+		ConnectionState <= (others=>'0');
+		InterruptStatus <= (others=>'0');
+		FrameLength <= (others=>'0');
+		Clean <= '0';
+		RampData <= X"0001";
+		WriteCount <= (others=>'0');
+		EventLength <= (others=>'0');
+  elsif (EthClk'event and EthClk='1') then
+		-- Counter of completed register reads
+		if (UserReadDataValid='1') then
+			 UserValidCount <= UserValidCount + 1;
+		end if;
 
- -- Write data pipeline
-if EthCS = '0' and uCWR = '0' then DQWrtDly(0) <= uCD;
- else DQWrtDly(0) <= DQWrtDly(0);
- end if;
- 
- if ZEthClk = '1' then 
-		DQWrtDly(1) <= DQWrtDly(0);
-		DQWrtDly(2) <= DQWrtDly(1);
- else DQWrtDly(1) <= DQWrtDly(1);
-		DQWrtDly(2) <= DQWrtDly(2);
+		
+		EthRDDL(0) <= not uCRD and not CpldCS;
+		EthRDDL(1) <= EthRDDL(0);
+
+		case UserFPGAState is
+			 -- Power on startup delay until GigExpedite reports a valid IP address
+			 when USER_FPGA_DELAY_INIT =>
+				  if (Delay=X"ffffff") then
+						if (UserReadDataValid='1' and UserReadData/=X"0000" and UserReadData/=X"ffff") then
+							 UserValidCount <= (others=>'0');
+							 UserFPGAState <= USER_FPGA_CHECK_STATE;
+						end if;
+				  else
+						Delay <= Delay + 1;
+				  end if;
+			 
+			 -- Check if the connection state has changed
+			 when USER_FPGA_CHECK_STATE =>
+				  UserFPGASubState <= UserFPGASubState + 1;
+				  if (UserReadDataValid='1' and UserValidCount=X"0000") then
+						-- Store the interrupt status bits
+						InterruptStatus <= UserReadData;
+				  end if;
+				  if (UserReadDataValid='1' and UserValidCount=X"0001") then
+						-- Store the new connection state
+						ConnectionState <= UserReadData(5 downto 0);
+						WriteCount <= (others=>'0');
+
+						-- Next, check if there is buffer space to send data
+						UserFPGASubState <= (others=>'0');
+						UserValidCount <= (others=>'0');
+						UserFPGAState <= USER_FPGA_CHECK_SPACE;
+				  end if;
+
+			 
+			 -- Check if there is space in the outgoing GigExpedite buffer
+			 -- and we have data to send back to the host
+			 when USER_FPGA_CHECK_SPACE =>
+				  UserFPGASubState <= UserFPGASubState + 1;
+				  if (EventBuff_Out >= EvBuffWrdsUsed or EthSendHold = '1' or
+						ConnectionState(3 downto 0)/=ESTABLISHED or
+						InterruptStatus(2)='0') then
+						-- not a full event in event buffer
+						-- connection from the host has not been made
+						-- or there is no space in the GigExpedite buffer (less than 64k)
+						UserFPGASubState <= (others=>'0');
+						UserValidCount <= (others=>'0');
+						UserFPGAState <= USER_FPGA_CHECK_STATE;
+				  else
+						-- OK to write data to GigExpedite FIFO
+						UserFPGASubState <= (others=>'0');
+						UserValidCount <= (others=>'0');
+						UserFPGAState <= USER_FPGA_WRITE_DATA;
+						EventLength <= EventBuff_Out;
+				  end if;
+
+			 -- Write 1kbyte of data to outgoing FIFO
+			 when USER_FPGA_WRITE_DATA =>
+				  UserFPGASubState <= UserFPGASubState + 1;
+				  WriteCount <= WriteCount + 1;
+				  if (WriteCount = EventLength+1) or (EventLength = 0) or  (UserFPGASubState=X"0fff") -- I don't understand why it's EventLength+1 and not EventLength-1
+					then
+						UserFPGASubState <= (others=>'0');
+						UserValidCount <= (others=>'0');
+						UserFPGAState <= USER_FPGA_CHECK_STATE;
+				  end if;
+
+			 when others => null;
+		end case;
+		
+		
+
   end if;
-
--- Tri state enable for read data
- if ZEthClk = '1' and DQEn = '0' and EthWRDL(2 downto 1) = 1 then DQEn <= '1'; 
-  elsif ZEthClk = '1' and DQEn = '1' and EthWRDL(4 downto 3) = 1 then DQEn <= '0';
-   else DQEn <= DQEn; 
- end if;
-
--- Chip enable and byte select
-	if ZEthClk = '1' and ZEthCS = '1' and (EthWRDL(1 downto 0) = 1 or EthRDDL(1 downto 0) = 1) then 
-		ZEthCS <= '0'; 
--- use a specific address to access any trailing bytes from a series of word accesses
-		if uCA(8) = '0' and uCA(3 downto 0) = "1001" then 
-				ZEthBE <= "01";
-			else 
-				ZEthBE <= "00";
-			end if;
-	elsif ZEthClk = '1' and ZEthCS = '0' and (EthWRDL(2 downto 1) = 1 or EthRDDL(2 downto 1) = 1) then
-		ZEthCS <= '1';
-		ZEthBE <= "11";
-	else ZEthCS <= ZEthCS;
-		 ZEthBE <= ZEthBE;
-	end if;
-
--- Latch the address
-	if EthCS = '0' and (uCWR = '0' or uCRd = '0') and uCA(8) = '0' and uCA(3 downto 0) = "1001"  
-		then ZEthA <= uCA(8 downto 1) & '0'; 
-	elsif EthCS = '0' and (uCWR = '0' or uCRd = '0') and (uCA(8) = '1' or uCA(3 downto 0) /= "1001")
-		then ZEthA <= uCA(8 downto 0); 
-	else ZEthA <= ZEthA; 
-	end if;
-
--- Write strobe
-		if ZEthClk = '1' and ZEthWE = '1' and EthWRDL(1 downto 0) = 1 
-			then ZEthWE <= '0'; 
-	elsif (ZEthClk = '1' and ZEthWE = '0' and EthWRDL(2 downto 1) = 1) or uCRd = '0'
-			then ZEthWE <= '1'; 
-	else ZEthWE <= ZEthWE;
-	end if;
-
-end if;
-
 end process;
 
+-- Map states to Ethernet register accesses
+process (UserFPGAState, Delay, UserFPGASubState, UserReadDataValid, UserReadData,
+		 UserValidCount, ConnectionState, FrameLength, EventBuff_Out, EthRDDL) begin
+
+--This seems hacky, but I don't know a better way
+--Reads out event buff on eth read or uc read, but without delay after going to write data.
+--should prevent double read of first word
+	if (EthRDDL = 2 and uCA(11 downto 10) = GA and uCA(9 downto 0) = EvBuffAd)
+		or (UserFPGAState = USER_FPGA_WRITE_DATA)
+	then
+		EventBuff_RdEn <= '1';
+	else
+		EventBuff_RdEn <= '0';
+	end if;
+
+  case UserFPGAState is
+		when USER_FPGA_DELAY_INIT =>
+			 -- Read IP address
+			 if (Delay=X"ffffff") then
+				  UserRE <= '1';
+			 else
+				  UserRE <= '0';
+			 end if;
+			 UserWE <= '0';
+			 UserBE <= "11";
+			 UserAddr <= LOCAL_IP_ADDR_LOW;
+			 UserWriteData <= (others=>'0');
+		
+		when USER_FPGA_CHECK_STATE =>
+			 -- Read connection state then update accordingly
+			 -- The only important state change is to ESTABLISHED which
+			 -- we must acknowledge by changing our state to ESTABLISHED.
+			 -- All other state changes result in us returning to LISTEN
+			 -- to wait for another connection from a new client.
+			 if (UserFPGASubState(3 downto 1)="000") then
+				  UserRE <= '1';
+			 else
+				  UserRE <= '0';
+			 end if;
+			 if (UserReadDataValid='1' and UserValidCount(0)='1' and
+				  UserReadData(5 downto 0)/=ConnectionState) then
+				  UserWE <= '1';
+			 else
+				  UserWE <= '0';
+			 end if;
+			 UserBE <= "11";
+			 if (UserFPGASubState(3 downto 0)="0000") then
+				  UserAddr <= '0' & X"0" & INTERRUPT_ENABLE_STATUS;
+			 else
+				  UserAddr <= '0' & X"0" & CONNECTION_STATE;
+			 end if;
+			 if (UserReadData(3 downto 0)=ESTABLISHED) then
+				  UserWriteData <= (CONN_TCP or CONN_ENABLE or ESTABLISHED);
+			 else
+				  UserWriteData <= (CONN_TCP or CONN_ENABLE or LISTEN);
+			 end if;
+
+		when USER_FPGA_CHECK_SPACE =>
+			 -- No access necessary
+			 UserRE <= '0';
+			 UserWE <= '0';
+			 UserBE <= "11";
+			 UserAddr <= (others=>'0');
+			 UserWriteData <= (others=>'0');
+			 
+		when USER_FPGA_WRITE_DATA =>
+			 -- Write data to connection FIFO
+			 UserRE <= '0';
+			 UserWE <= '1';
+			 UserBE <= "11";
+			 UserAddr <= '0' & X"0" & DATA_FIFO;
+			 UserWriteData <= EventBuff_Out;
+			 
+		when others =>
+			 -- Don't do anything
+			 UserRE <= '0';
+			 UserWE <= '0';
+			 UserAddr <= (others=>'0');
+			 UserBE <= "11";
+			 UserWriteData <= (others=>'0');
+
+  end case;
+end process;
+		
+		
+		
 HrtBtFMTxReq : process(Clk80MHz, CpldRst)
 
 begin 
@@ -926,6 +1139,8 @@ begin
 		
 		TStmpBuff_wr_en <= '0';
 		TStmpBuff_rd_en <= '0';
+		uBunchBuffWr_en <= '0';
+		uBunchBuffRd_en <= '0';
 		Trig_Tx_Req <= '0';
 
 
@@ -1009,9 +1224,14 @@ begin
 		then
 			HrtBtFMTxEn <= '1';
 			Trig_Tx_Req <= '1';
+			TStmpBuff_wr_en <= '1';
+			uBunchBuffWr_en <= '1';
 		else
 			HrtBtFMTxEn <= '0';
 			Trig_Tx_Req <= '0';
+			TStmpBuff_wr_en <= '0';
+			uBunchBuffWr_en <= '0';
+
 		end if;
 
 
@@ -1038,7 +1258,7 @@ begin
 		TrigLED <= '0';
 		TDisA <= '0';
 		TDisB <= '0';
-		GPO(1) <= '0';
+		GPO <= "00";
 		
 		-- Synchronous edge detectors for various strobes
 		RDDL <= "00"; WRDL <= "00"; 
@@ -1127,6 +1347,9 @@ begin
 		else
 			TestCount <= TestCount;
 		end if;
+		
+		
+
 
 
 		-- Serializer for front panel LEDs
@@ -1391,7 +1614,7 @@ end process;
 with uCA(9 downto 0) select
 
 iCD <= X"0" & '0' & '0' & '0' & '0' & '0' & '0' 
-		 & '0' & '0' & '0' & FormHold & '0' & '0' when CSRRegAddr,
+		 & '0' & '0' & '0' & FormHold & EthSendHold & '0' when CSRRegAddr,
 
 		 X"000" & "000" & PllPDn when PLLPDnAddr,
 		 DReqBuff_Out(15 downto 0) when TRigReqBuffAd,
@@ -1404,6 +1627,8 @@ iCD <= X"0" & '0' & '0' & '0' & '0' & '0' & '0'
 		 UpTimeStage(15 downto 0) when UpTimeRegAddrLo,
 		 TestCount(31 downto 16) when TestCounterHiAd,
 		 TestCount(15 downto 0) when TestCounterLoAd,
+		 EventBuff_Out when EvBuffAd,
+		 EventLength when EventLengthAd,
 		 LinkFIFOOut(0) when LinkRdAddr(0),
 		 LinkFIFOOut(1) when LinkRdAddr(1),
 		 LinkFIFOOut(2) when LinkRdAddr(2),
@@ -1420,7 +1645,6 @@ iCD <= X"0" & '0' & '0' & '0' & '0' & '0' & '0'
 
 -- Select between the Orange Tree port and the rest of the registers
 uCD <= iCD when uCRd = '0' and CpldCS = '0' and uCA(11 downto 10) = GA 
-		 else iDQ when uCRd = '0' and EthCS = '0'  
 		 else (others => 'Z');
 
 end behavioural;
