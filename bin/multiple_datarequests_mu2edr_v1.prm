@@ -1,0 +1,17 @@
+PROMGEN: Xilinx Prom Generator P.20131013
+Copyright (c) 1995-2013 Xilinx, Inc.  All rights reserved.
+
+promgen -w -p bin -c FF -o /media/dmishins/1AD0BEB7D0BE9909/Users/Daniel/Desktop/Research/DAPHNE/CONTROLLER/Controller_FPGA1_Devel/bin/multiple_datarequests_mu2edr_v1 -s 8192 -u 0 ControllerFPGA_1.bit 
+
+PROM /media/dmishins/1AD0BEB7D0BE9909/Users/Daniel/Desktop/Research/DAPHNE/CONTROLLER/Controller_FPGA1_Devel/bin/multiple_datarequests_mu2edr_v1.prm map: Tue Aug  2 17:05:08 2022
+
+Calculating PROM checksum with fill value ff
+
+Format        Bin
+Size          8192K
+PROM start    00000000
+PROM end      007fffff
+PROM checksum 0075058f
+
+        Addr1        Addr2                     Date File(s)
+     00000000     000c3ab5     Aug  2 15:56:42 2022 ControllerFPGA_1.bit

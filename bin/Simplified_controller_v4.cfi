@@ -1,0 +1,11 @@
+# PROMGEN: Xilinx Prom Generator P.20131013
+# Copyright (c) 1995-2013 Xilinx, Inc.  All rights reserved.
+
+SOFTWARE_VERSION P.20131013
+DATE             6/17/2022 - 15:20
+SOURCE          /media/dmishins/1AD0BEB7D0BE9909/Users/Daniel/Desktop/Research/DAPHNE/CONTROLLER/Controller_FPGA1_Devel/bin/Simplified_controller_v4.bin
+DEVICE          8192K
+DATA_WIDTH      8
+FILL_DATA       0xFF
+SIGNATURE       0x004105B3
+START_ADDRESS   0x00000000 END_ADDRESS 0x000C3CE1 DIRECTION_UP   "ControllerFPGA_1.bit" 6slx25tfgg484

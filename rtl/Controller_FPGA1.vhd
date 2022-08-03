@@ -23,7 +23,8 @@
 LIBRARY ieee;
 use ieee.std_logic_1164.all;
 use ieee.std_logic_unsigned.all;
-
+use IEEE.numeric_std.all;
+		  
 Library UNISIM;
 use UNISIM.vcomponents.all;
 
@@ -86,6 +87,7 @@ Type Array_2x2 is Array(0 to 1) of std_logic_vector (1 downto 0);
 Type Array_2x3 is Array(0 to 1) of std_logic_vector (2 downto 0);
 Type Array_2x10 is Array(0 to 1) of std_logic_vector(9 downto 0);
 Type Array_2x13 is Array(0 to 1) of std_logic_vector (12 downto 0);
+Type Array_2x15 is Array(0 to 1) of std_logic_vector (14 downto 0);
 Type Array_2x16 is Array(0 to 1) of std_logic_vector (15 downto 0);
 
 Type Array_3x3 is Array(0 to 2) of std_logic_vector(2 downto 0);
@@ -93,7 +95,7 @@ Type Array_3x4 is Array(0 to 2) of std_logic_vector(3 downto 0);
 Type Array_3x5 is Array(0 to 2) of std_logic_vector(4 downto 0);
 Type Array_3x8 is Array(0 to 2) of std_logic_vector(7 downto 0);
 Type Array_3x13 is Array(0 to 2) of std_logic_vector (12 downto 0);
-Type Array_3x14 is Array (0 to 2) of std_logic_vector (13 downto 0);
+Type Array_3x15 is Array (0 to 2) of std_logic_vector (14 downto 0);
 Type Array_3x16 is Array(0 to 2) of std_logic_vector (15 downto 0);
 
 Type Array_3x2x10 is Array (0 to 2) of Array_2x10;
@@ -206,7 +208,7 @@ signal PhaseAccD : std_logic;
 -- Link receive FIFO signals
 signal LinkFIFOEn,LinkFIFOEnd,LinkFIFORdReq,LinkFIFOWrReq,
 		 LinkFIFOEmpty,LinkFIFOFull : std_logic_vector (2 downto 0);
-signal LinkFIFORdCnt : Array_3x13;
+signal LinkFIFORdCnt : Array_3x15;
 signal LinkRDDL : std_logic_vector (1 downto 0);
 signal LinkFIFOOut : Array_3x16;
 
@@ -214,7 +216,7 @@ signal LinkFIFOOut : Array_3x16;
 signal EventBuff_WrtEn,EventBuff_RdEn,
 		 EventBuff_Full,EventBuff_Empty,EvBuffWrtGate : std_logic;
 signal EventBuff_Dat,EventBuff_Out,EventSum : std_logic_vector (15 downto 0);
-signal EvBuffWrdsUsed : STD_LOGIC_VECTOR(13 DOWNTO 0);
+signal EvBuffWrdsUsed : STD_LOGIC_VECTOR(12 DOWNTO 0);
 
 signal FIFOCount : Array_3x16;
 --signal to stop the event builder from running.
@@ -268,6 +270,7 @@ signal HrtBtDone,HrtBtTxReq,HrtBtTxAck,HrtBtFMTxEn,TxEnReq,LinkBusy : std_logic;
 signal HrtBtData : std_logic_vector (23 downto 0);
 
 signal uBunchCount : std_logic_vector(47 downto 0);
+signal DreqSentCount : Unsigned(3 downto 0);
 signal Beam_On : std_logic;
 
 --Signals used by the trigger/heartbeat/dr logic
@@ -290,7 +293,7 @@ signal LinkFIFOStatReg,Lower_FM_Bits : std_logic_vector (2 downto 0);
 signal Trig_Tx_Req : std_logic;
 
 Type Trig_Tx_State is (Idle,SenduBunch0,SenduBunch1,
-								SendHdr);
+								SendHdr, SendPad, Sleep);
 signal IntTrigSeq : Trig_Tx_State;
 
 -- Time stamp  FIFO
@@ -364,19 +367,19 @@ DReqBuff : FIFO_SC_1kx16
     empty => DReqBuff_Emtpy,
     data_count => TrgPktCnt
   );
-
-uBunchTrigBuff : uBunchBuff
-  PORT MAP (
-    clk => Clk80MHz,
-    rst => ResetHI,
-    din => uBunchCount,
-    wr_en => uBunchBuffWr_en,
-    rd_en => uBunchBuffRd_en,
-    dout => uBunchBuffOut,
-    full => uBunchBuffFull,
-    empty => uBunchBuffEmpty,
-    data_count => uBunchBuffCount
-  );
+--
+--uBunchTrigBuff : uBunchBuff
+--  PORT MAP (
+--    clk => Clk80MHz,
+--    rst => ResetHI,
+--    din => uBunchCount,
+--    wr_en => uBunchBuffWr_en,
+--    rd_en => uBunchBuffRd_en,
+--    dout => uBunchBuffOut,
+--    full => uBunchBuffFull,
+--    empty => uBunchBuffEmpty,
+--    data_count => uBunchBuffCount
+--  );
 
 -- Queue up time stamps for later checking
 TimeStampBuff : TrigPktBuff
@@ -470,9 +473,9 @@ Case Event_Builder is
 		end if;
 	when WaitEvent => --Debug(10 downto 7) <= X"1";
 			-- Wait for a complete event to be in all link FIFOs from active ports
-	    if ((LinkFIFOOut(0)(12 downto 0) <= LinkFIFORdCnt(0) and LinkFIFOEmpty(0) = '0') or ActiveReg(7 downto 0) = 0)
-	   and ((LinkFIFOOut(1)(12 downto 0) <= LinkFIFORdCnt(1) and LinkFIFOEmpty(1) = '0') or ActiveReg(15 downto 8) = 0)
-	   and ((LinkFIFOOut(2)(12 downto 0) <= LinkFIFORdCnt(2) and LinkFIFOEmpty(2) = '0') or ActiveReg(23 downto 16) = 0) 
+	    if ((LinkFIFOOut(0)(14 downto 0) <= LinkFIFORdCnt(0) and LinkFIFOEmpty(0) = '0') or ActiveReg(7 downto 0) = 0)
+	   and ((LinkFIFOOut(1)(14 downto 0) <= LinkFIFORdCnt(1) and LinkFIFOEmpty(1) = '0') or ActiveReg(15 downto 8) = 0)
+	   and ((LinkFIFOOut(2)(14 downto 0) <= LinkFIFORdCnt(2) and LinkFIFOEmpty(2) = '0') or ActiveReg(23 downto 16) = 0) 
 	    then
 		 if ActiveReg(15 downto 0) = 0 then Event_Builder <= RdInWdCnt2;
 	  elsif ActiveReg(7 downto 0) = 0 then Event_Builder <= RdInWdCnt1;
@@ -655,9 +658,86 @@ end if; -- CpldRst
 
 end process;
 
+---- DG: new process -- handles generation of Data Request from external LEMO-NIM trigger
+---- buffers data request in register so uC can readout and send request to FEB's
+--gen_datareq : process (Clk80MHz, CpldRst)
+--variable DreqAdd : unsigned(47 downto 0) := (others => '0');
+--begin
+--	if CpldRst = '0'
+--	then 
+--		IntTrigSeq <= Idle; 
+--		DReqBuff_wr_en <= '0'; 
+--
+--	elsif rising_edge (Clk80MHz)
+--	then
+--
+--		-- SBND Internal Data Request Generator
+--		-- Simplified from mu2e version by removing all fiber logic.
+--		-- Requires Modified mode in uC code
+--		-- (Now: Idle,SenduBunch0,SenduBunch1,SendHdr)
+--		-- (Was: Idle,SendTrigHdr,SendPktType,SendPad0,SenduBunch0,SenduBunch1,
+--		--		SenduBunch2,SendPad1,SendPad2,SendPad3,SendCRC)
+--		Case IntTrigSeq is
+--			when Idle =>
+--			  DreqSentCount <= x"0";
+--			  DreqAdd := (others => '0');
+--			  if Trig_Tx_Req = '1' then IntTrigSeq <= SendHdr;
+--			  else IntTrigSeq <= Idle;
+--			  end if;
+--			when  SendHdr=> IntTrigSeq <= SenduBunch0;
+--			when SenduBunch0 => IntTrigSeq <= SenduBunch1;
+--			when SenduBunch1 => 
+--				if DreqSentCount = 3 then
+--					IntTrigSeq <= Idle;
+--				else
+--					IntTrigSeq <= SendHdr;
+--					DreqSentCount <= DreqSentCount + 1;
+--				end if;
+--			when others => IntTrigSeq <= Idle;  
+--		end Case;
+--
+--
+--		if IntTrigSeq = SenduBunch0  
+--		then
+--			DreqAdd := (unsigned(uBunchCount) + DreqSentCount);
+--			DReqBuff_In <= std_logic_vector(DreqAdd(15 downto 0));
+--			DReqBuff_wr_en <= '1';
+--
+--		elsif IntTrigSeq = SenduBunch1  
+--		then
+--			DreqAdd := (unsigned(uBunchCount) + DreqSentCount);
+--			DReqBuff_In <= std_logic_vector(DreqAdd(31 downto 16));
+--			DReqBuff_wr_en <= '1';
+--
+--		elsif IntTrigSeq = SendHdr  
+--		then
+--			DReqBuff_In <= x"F0F0";
+--			DReqBuff_wr_en <= '1';
+--		else
+--				DReqBuff_wr_en <= '0';
+--		end if; --fsm
+--		
+--		--	Read of the trigger request FIFO
+--		if FMRDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = TRigReqBuffAd 
+--		then
+--			DReqBuff_rd_en <= '1';
+--		else
+--			DReqBuff_rd_en <= '0';
+--		end if;
+--
+--	end if; --clk
+--
+--end process;
+--
+
+
 -- DG: new process -- handles generation of Data Request from external LEMO-NIM trigger
 -- buffers data request in register so uC can readout and send request to FEB's
 gen_datareq : process (Clk80MHz, CpldRst)
+variable DreqAdd : unsigned(47 downto 0) := (others => '0');
+variable waitbefore : integer := 0;
+variable waitafter : integer := 0;
+variable sleepTime : integer := 0;
 begin
 	if CpldRst = '0'
 	then 
@@ -675,29 +755,71 @@ begin
 		--		SenduBunch2,SendPad1,SendPad2,SendPad3,SendCRC)
 		Case IntTrigSeq is
 			when Idle =>
-			  if Trig_Tx_Req = '1' then IntTrigSeq <= SendHdr;
+			  DreqSentCount <= x"0";
+			  DreqAdd := (others => '0');
+			  waitbefore := 0;
+			  waitafter := 0;
+			  if Trig_Tx_Req = '1' then 
+					IntTrigSeq <= Sleep;
+					sleepTime := 0;
 			  else IntTrigSeq <= Idle;
 			  end if;
-			when  SendHdr=> IntTrigSeq <= SenduBunch0;
+			when Sleep =>
+				sleepTime := sleepTime + 1;
+				if sleepTime = 60000 then
+					IntTrigSeq <= SendHdr;
+				else 
+					IntTrigSeq <= Sleep;
+				end if;
+				
+			when  SendHdr=> 
+				waitbefore := waitbefore + 1;
+				if waitbefore = 2 then
+					IntTrigSeq <= SenduBunch0;
+					waitbefore := 0;
+				   waitafter := 0;
+
+				else
+					IntTrigSeq <= SendHdr;
+				end if;
+				
 			when SenduBunch0 => IntTrigSeq <= SenduBunch1;
-			when SenduBunch1 => IntTrigSeq <= Idle;
+			when SenduBunch1 => IntTrigSeq <= SendPad;
+			when SendPad => 
+				waitafter := waitafter + 1;
+				if waitafter = 5 then
+					if DreqSentCount = 3 then
+						IntTrigSeq <= Idle;
+					else
+						IntTrigSeq <= Sleep;
+						sleepTime := 0;
+						DreqSentCount <= DreqSentCount + 1;
+					end if;
+				end if;
 			when others => IntTrigSeq <= Idle;  
 		end Case;
 
 
 		if IntTrigSeq = SenduBunch0  
 		then
-			DReqBuff_In <= uBunchCount(15 downto 0);
+			DreqAdd := (unsigned(uBunchCount) + DreqSentCount);
+			DReqBuff_In <= std_logic_vector(DreqAdd(15 downto 0));
 			DReqBuff_wr_en <= '1';
 
 		elsif IntTrigSeq = SenduBunch1  
 		then
-			DReqBuff_In <= uBunchCount(31 downto 16);
+			DreqAdd := (unsigned(uBunchCount) + DreqSentCount);
+			DReqBuff_In <= std_logic_vector(DreqAdd(31 downto 16));
 			DReqBuff_wr_en <= '1';
 
 		elsif IntTrigSeq = SendHdr  
 		then
 			DReqBuff_In <= x"F0F0";
+			DReqBuff_wr_en <= '1';
+		
+		elsif IntTrigSeq = SendPad  
+		then
+			DReqBuff_In <= x"1234";
 			DReqBuff_wr_en <= '1';
 		else
 				DReqBuff_wr_en <= '0';
@@ -714,6 +836,7 @@ begin
 	end if; --clk
 
 end process;
+
 
 -- Fifo for buffering microcontoller parallel data prior to serializing
 -- Used for controlling the 96 harmonica jack LEDs
@@ -1163,6 +1286,14 @@ begin
 		end if;
 
 		-- Write to TriggerControl D0 to manually trigger
+		if FMWRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = BeamTypeAd
+		then
+			Beam_On <= uCD(0);
+		else
+			Beam_On <= Beam_On;
+		end if;
+
+		-- Write to TriggerControl D0 to manually trigger
 		if FMWRDL = 1 and uCA(11 downto 10) = GA and uCA(9 downto 0) = TriggerControlAddress and uCD(0)='1'
 		then 
 			ManTrig <='1';
@@ -1213,7 +1344,7 @@ begin
 		then
 			uBunchCount <= (others => '0');
 		elsif TriggerReq = '1' then
-			uBunchCount <= uBunchCount + 1;
+			uBunchCount <= uBunchCount + 4;
 		else
 			uBunchCount <= uBunchCount;
 		end if;
@@ -1633,14 +1764,15 @@ iCD <= X"0" & '0' & '0' & '0' & '0' & '0' & '0'
 		 LinkFIFOOut(1) when LinkRdAddr(1),
 		 LinkFIFOOut(2) when LinkRdAddr(2),
 		 X"00" & '0' & LinkFIFOFull & '0' & LinkFIFOEmpty when LinkCSRAddr,
-		 "000" & LinkFIFORdCnt(0) when LinkWdCnt0Ad,
-		 "000" & LinkFIFORdCnt(1) when LinkWdCnt1Ad,
-		 "000" & LinkFIFORdCnt(2) when LinkWdCnt2Ad,
+		 "0" & LinkFIFORdCnt(0) when LinkWdCnt0Ad,
+		 "0" & LinkFIFORdCnt(1) when LinkWdCnt1Ad,
+		 "0" & LinkFIFORdCnt(2) when LinkWdCnt2Ad,
 		 X"000" & "00" & EventBuff_Full & EventBuff_empty when EvBuffStatAd,
 		 uBunchCount(47 downto 32) when MicroBunchAdHi,
 		 uBunchCount(31 downto 16) when MicroBunchAdMid,
 		 uBunchCount(15 downto 0) when MicroBunchAdLo,
 		 TriggerHoldoff when TriggerHoldoffAddress,
+		 x"000" & "000" & Beam_On when BeamTypeAd,
 		 X"0000" when others;
 
 -- Select between the Orange Tree port and the rest of the registers

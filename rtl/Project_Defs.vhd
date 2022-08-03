@@ -117,6 +117,7 @@ constant PeriodicMicrobunchPeriodAddrLo : AddrPtr := "00" & X"7B";
 constant ExternalTriggerInhibitAddrHi : AddrPtr := "00" & X"7C";
 constant ExternalTriggerInhibitAddrMd : AddrPtr := "00" & X"7D";
 constant ExternalTriggerInhibitAddrLo : AddrPtr := "00" & X"7E";
+constant BeamTypeAd : AddrPtr := "00" & X"7F";
 
 
 ---------------------- Broadcast addresses ------------------------------
@@ -264,7 +265,7 @@ component LinkFIFO
     din : in std_logic_vector(15 downto 0);
     dout : out std_logic_vector(15 downto 0);
     full,empty : out STD_LOGIC;
-    rd_data_count : out std_logic_vector(12 downto 0));
+    rd_data_count : out std_logic_vector(14 downto 0));
 end component;
 
 -- FIFO for queueing data form the microcontroller for setting the LEDs
@@ -318,7 +319,7 @@ COMPONENT FIFO_DC_8kx16
     dout : OUT STD_LOGIC_VECTOR(15 DOWNTO 0);
     full : OUT STD_LOGIC;
     empty : OUT STD_LOGIC;
-    rd_data_count : OUT STD_LOGIC_VECTOR(13 DOWNTO 0)
+    rd_data_count : OUT STD_LOGIC_VECTOR(12 DOWNTO 0)
   );
 END COMPONENT;
 
