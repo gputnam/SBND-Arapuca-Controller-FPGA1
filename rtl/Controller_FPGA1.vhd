@@ -159,12 +159,17 @@ signal GPOCount : std_logic_vector(2 downto 0);
     signal UserReadData : std_logic_vector(15 downto 0);
     signal UserReadDataValid : std_logic;
     signal UserInterrupt : std_logic;
+	 signal EventReady : std_logic;
+	 signal SplitEventIndex : unsigned(4 downto 0);
+	 signal EthStatReg : std_logic_vector(3 downto 0);
 
     type STATE_TYPE is (
         USER_FPGA_DELAY_INIT,
         USER_FPGA_CHECK_STATE,
         USER_FPGA_CHECK_SPACE,
-        USER_FPGA_WRITE_DATA
+        USER_FPGA_WRITE_DATA,
+		  USER_FPGA_CHECK_NOT_FULL, 
+		  USER_FPGA_WRITE_HEADER
 
     );
     signal UserFPGAState : STATE_TYPE;
@@ -178,6 +183,7 @@ signal GPOCount : std_logic_vector(2 downto 0);
     signal RampData : std_logic_vector(15 downto 0);
     signal WriteCount : std_logic_vector(31 downto 0);
     signal EventLength : std_logic_vector(15 downto 0);
+	 signal EventBuildData : std_logic_vector(15 downto 0);
 	 	 
 	 signal Unused_addr_0 : std_logic; --leaving part of the port open is apparently invalid. This fixes simulation
 	 
@@ -206,7 +212,7 @@ signal FreqReg,PhaseAcc : std_logic_vector (31 downto 0);
 signal PhaseAccD : std_logic;
 
 -- Link receive FIFO signals
-signal LinkFIFOEn,LinkFIFOEnd,LinkFIFORdReq,LinkFIFOWrReq,
+signal LinkFIFOEn,LinkFIFOEnd,LinkFIFORdReq, LinkFIFOEventBuilderRdReq,LinkFIFOuCRdReq,LinkFIFOWrReq,
 		 LinkFIFOEmpty,LinkFIFOFull : std_logic_vector (2 downto 0);
 signal LinkFIFORdCnt : Array_3x15;
 signal LinkRDDL : std_logic_vector (1 downto 0);
@@ -219,12 +225,18 @@ signal EventBuff_Dat,EventBuff_Out,EventSum : std_logic_vector (15 downto 0);
 signal EvBuffWrdsUsed : STD_LOGIC_VECTOR(12 DOWNTO 0);
 
 signal FIFOCount : Array_3x16;
+signal FIFOReadout : Array_3x16;
 --signal to stop the event builder from running.
 signal FormHold, FormRst, EthSendHold : std_logic;
 
 Type Event_Builder_Seq is (Idle,RdInWdCnt0,RdInWdCnt1,RdInWdCnt2,SumWdCnt,WrtWdCnt,RdStat0,
 								   RdStat1,RdStat2,WrtStat,WaitEvent,ReadFIFO0,ReadFIFO1,ReadFIFO2);
 signal Event_Builder : Event_Builder_Seq;
+
+
+Type Eth_Event_Seq is (Idle,RdInWdCnt0,RdInWdCnt1,RdInWdCnt2,SumWdCnt,WrtWdCnt,RdStat0,
+								   RdStat1,RdStat2,WrtStat,WaitEvent,ReadFIFO0,ReadFIFO1,ReadFIFO2);
+signal Eth_Event_Builder : Eth_Event_Seq;
 
 -- Front panel LED Shifter signals
 signal CMDwr_en,CMDrd_en,CMD_Full,CMD_Empty : std_logic;
@@ -368,18 +380,18 @@ DReqBuff : FIFO_SC_1kx16
     data_count => TrgPktCnt
   );
 --
---uBunchTrigBuff : uBunchBuff
---  PORT MAP (
---    clk => Clk80MHz,
---    rst => ResetHI,
---    din => uBunchCount,
---    wr_en => uBunchBuffWr_en,
---    rd_en => uBunchBuffRd_en,
---    dout => uBunchBuffOut,
---    full => uBunchBuffFull,
---    empty => uBunchBuffEmpty,
---    data_count => uBunchBuffCount
---  );
+uBunchTrigBuff : uBunchBuff
+  PORT MAP (
+    clk => Clk80MHz,
+    rst => ResetHI,
+    din => uBunchCount,
+    wr_en => uBunchBuffWr_en,
+    rd_en => uBunchBuffRd_en,
+    dout => uBunchBuffOut,
+    full => uBunchBuffFull,
+    empty => uBunchBuffEmpty,
+    data_count => uBunchBuffCount
+  );
 
 -- Queue up time stamps for later checking
 TimeStampBuff : TrigPktBuff
@@ -430,8 +442,8 @@ begin
  if CpldRst = '0' then 
 
 	Event_Builder <= Idle;
-	LinkFIFORdReq <= (others =>'0'); StatOr <= X"00";  Stat0 <= X"00";
-	FIFOCount <= (others => (others => '0')); EventBuff_WrtEn <= '0';
+	StatOr <= X"00";  Stat0 <= X"00";
+	EventBuff_WrtEn <= '0';
 	ActiveReg <= X"000000"; LinkFIFOStatReg <= "000";
 	AddrReg <= (others =>'0');
 	FormHold <= '0'; 
@@ -461,194 +473,11 @@ elsif rising_edge (SysClk) then
 		FormRst <= '0';
 	end if;
 
----------------------------------------------------------------------------
--- Idle,RdInWdCnt0,RdInWdCnt1,RdInWdCnt2,SumWdCnt,WrtWdCnt,RdStat0,
--- RdStat1,RdStat2,WrtStat,WaitEvent,ReadFIFO0,ReadFIFO1,ReaddFIFO2
----------------------------------------------------------------------------
-Case Event_Builder is
-	when Idle => --Debug(10 downto 7) <= X"0";
-		if LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpBuff_Emtpy = '0'
-		 then Event_Builder <= WaitEvent;
-		else Event_Builder <= Idle;
-		end if;
-	when WaitEvent => --Debug(10 downto 7) <= X"1";
-			-- Wait for a complete event to be in all link FIFOs from active ports
-	    if ((LinkFIFOOut(0)(14 downto 0) <= LinkFIFORdCnt(0) and LinkFIFOEmpty(0) = '0') or ActiveReg(7 downto 0) = 0)
-	   and ((LinkFIFOOut(1)(14 downto 0) <= LinkFIFORdCnt(1) and LinkFIFOEmpty(1) = '0') or ActiveReg(15 downto 8) = 0)
-	   and ((LinkFIFOOut(2)(14 downto 0) <= LinkFIFORdCnt(2) and LinkFIFOEmpty(2) = '0') or ActiveReg(23 downto 16) = 0) 
-	    then
-		 if ActiveReg(15 downto 0) = 0 then Event_Builder <= RdInWdCnt2;
-	  elsif ActiveReg(7 downto 0) = 0 then Event_Builder <= RdInWdCnt1;
-	  else Event_Builder <= RdInWdCnt0;
-	  end if;
-	  elsif FormRst = '1' then Event_Builder <= Idle; 
-	  else Event_Builder <= WaitEvent;
-	end if;
- -- Read in three word counts in order to sum into a controller word count
-	when RdInWdCnt0 => --Debug(10 downto 7) <= X"2"; 
-		  if ActiveReg(23 downto 8) = 0 then Event_Builder <= SumWdCnt;
-	  elsif ActiveReg(15 downto 8) = 0 then Event_Builder <= RdInWdCnt2;
-	  else Event_Builder <= RdInWdCnt1;
-	  end if;
-	when RdInWdCnt1 => --Debug(10 downto 7) <= X"3";
-		if ActiveReg(23 downto 16) = 0 then Event_Builder <= SumWdCnt;
-			else Event_Builder <= RdInWdCnt2;
-		end if;
-	when RdInWdCnt2 => --Debug(10 downto 7) <= X"4";
-			Event_Builder <= SumWdCnt;
--- Subtract 2 from each link word count FIFO to account for the word count and status words
-	when SumWdCnt => --Debug(10 downto 7) <= X"5"; 
-			Event_Builder <= WrtWdCnt;
--- Write the controller word count	
-	when WrtWdCnt => --Debug(10 downto 7) <= X"6"; 
-		if ActiveReg(15 downto 0) = 0 then Event_Builder <= RdStat2;
-	elsif ActiveReg(7 downto 0) = 0 then Event_Builder <= RdStat1;
-	  else Event_Builder <= RdStat0;
-	end if;  
--- Read the status from the link FIFOs
-	when RdStat0 => --Debug(10 downto 7) <= X"7";
-		if ActiveReg(23 downto 8) = 0 then Event_Builder <= WrtStat;
-	elsif ActiveReg(15 downto 8) = 0 then Event_Builder <= RdStat2;
-	   else Event_Builder <= RdStat1;
-		end if;
-	when RdStat1 => --Debug(10 downto 7) <= X"8"; 
-			if ActiveReg(23 downto 16) = 0 then Event_Builder <= WrtStat;
-			else Event_Builder <= RdStat2;
-			end if;
-	when RdStat2 => --Debug(10 downto 7) <= X"9"; 
-		Event_Builder <= WrtStat;
--- Write the "OR" of the status as the controller status word
-	when WrtStat => --Debug(10 downto 7) <= X"A";
--- Skip over any Link that has no data
-			if FIFOCount(0) /= 0 and ActiveReg(7 downto 0) /= 0 
-				then Event_Builder <= ReadFIFO0;
-	   elsif FIFOCount(0) = 0 and FIFOCount(1) /= 0 
-				and ActiveReg(15 downto 8) /= 0 
-				then Event_Builder <= ReadFIFO1; 
-	   elsif FIFOCount(0) = 0 and FIFOCount(1) = 0 
-				and FIFOCount(2) /= 0 and ActiveReg(23 downto 16) /= 0  
-				then Event_Builder <= ReadFIFO2; 
-	   else Event_Builder <= Idle;
-		end if;
--- Read the data words from the three link FIFOs in succession
-	 when ReadFIFO0 => --Debug(10 downto 7) <= X"B";
-		if FIFOCount(0) = 1 or FIFOCount(0) = 0 then  
--- Skip over any Link that has no data
-				if FIFOCount(1) /= 0 and ActiveReg(15 downto 8) /= 0  
-				  then Event_Builder <= ReadFIFO1; 
-				 elsif FIFOCount(1) = 0 and FIFOCount(2) /= 0 and ActiveReg(23 downto 16) /= 0 
-				  then Event_Builder <= ReadFIFO2;
-		       else Event_Builder <= Idle;
-		      end if;
-		  elsif FormRst = '1' then Event_Builder <= Idle;
-		else Event_Builder <= ReadFIFO0;
-		end if;
-	 when ReadFIFO1 => --Debug(10 downto 7) <= X"C";
-		if FIFOCount(1) = 1 or FIFOCount(1) = 0 then
--- Skip over any Link that has no data
-			 if FIFOCount(2) /= 0  and ActiveReg(23 downto 16) /= 0  
-			   then Event_Builder <= ReadFIFO2;
-		     else Event_Builder <= Idle;
-			 end if;
-		 elsif FormRst = '1' then Event_Builder <= Idle; 
-		else Event_Builder <= ReadFIFO1;
-		end if;
-	 when ReadFIFO2 => --Debug(10 downto 7) <= X"D";
-		if FIFOCount(2) = 1 or FIFOCount(2) = 0 
-			then Event_Builder <= Idle;
-		 elsif FormRst = '1' then Event_Builder <= Idle; 
-		else Event_Builder <= ReadFIFO2;
-		end if;
-	 when others => --Debug(10 downto 7) <= X"E";
-	   Event_Builder <= Idle;
-  end case;
-
--- Sum the word counts from the three Link FIFOs.
-		if Event_Builder = Idle then EventSum <= (others => '0');
--- Account for removing the word count and status words from the data
-	elsif Event_Builder = RdInWdCnt0 then EventSum <= LinkFIFOOut(0) - 2;
-	elsif Event_Builder = RdInWdCnt1 then EventSum <= EventSum + (LinkFIFOOut(1) - 2);
-	elsif Event_Builder = RdInWdCnt2 then EventSum <= EventSum + (LinkFIFOOut(2) - 2);
-	else EventSum <= EventSum;
-	end if;
-
--- Select the data source for the event buffer FIFO
-	   if Event_Builder = WrtWdCnt then EventBuff_Dat <= EventSum;
-	elsif Event_Builder = WrtStat	then EventBuff_Dat <= Stat0 & StatOR;
-	elsif LinkFIFORdReq(0) = '1' then EventBuff_Dat <= LinkFIFOOut(0);
-	elsif LinkFIFORdReq(1) = '1' then EventBuff_Dat <= LinkFIFOOut(1);
-	elsif LinkFIFORdReq(2) = '1' then EventBuff_Dat <= LinkFIFOOut(2);
-	else EventBuff_Dat <= EventBuff_Dat;
-	end if;
-
--- Do an "or" of the FEB error words for the cotroller error word
-   if Event_Builder = RdStat0 then 
-				StatOr <= StatOr or LinkFIFOOut(0)(7 downto 0);
-				Stat0  <=           LinkFIFOOut(0)(7 downto 0);
-elsif Event_Builder = RdStat1 then 
-				StatOr <= StatOr or LinkFIFOOut(1)(7 downto 0);
-				Stat0 <= Stat0;
-elsif Event_Builder = RdStat2 then 
-				StatOr <= StatOr or LinkFIFOOut(2)(7 downto 0);
-				Stat0 <= Stat0;
-else StatOr <= StatOr; Stat0 <= Stat0;
-end if;
 
 --Copy port activity bits from the other FPGAs to this register
 ActiveReg <= FPGA234_Active(2) & FPGA234_Active(1) & FPGA234_Active(0);
 
--- Count down the words read from each of the link FIFOs
-	if Event_Builder = RdInWdCnt0 then FIFOCount(0) <= LinkFIFOOut(0) - 2;
-	elsif Event_Builder = ReadFIFO0 and FIFOCount(0) /= 0 
-						then FIFOCount(0) <= FIFOCount(0) - 1;
-	else FIFOCount(0) <= FIFOCount(0);
-	end if;
 
-	if Event_Builder = RdInWdCnt1 then FIFOCount(1) <= LinkFIFOOut(1) - 2;
-	elsif Event_Builder = ReadFIFO1 and FIFOCount(1) /= 0 
-						then FIFOCount(1) <= FIFOCount(1) - 1;
-	else FIFOCount(1) <= FIFOCount(1);
-	end if;
-
-	if Event_Builder = RdInWdCnt2 then FIFOCount(2) <= LinkFIFOOut(2) - 2;
-	elsif Event_Builder = ReadFIFO2 and FIFOCount(2) /= 0 
-						then FIFOCount(2) <= FIFOCount(2) - 1;
-	else FIFOCount(2) <= FIFOCount(2);
-	end if;
-
--- Link FIFO reads
--- Microcontroller read
-   if (LinkRDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = LinkRdAddr(0))
--- Read of header words, read of data words
-   or Event_Builder = RdInWdCnt0 or Event_Builder = RdStat0 or Event_Builder = ReadFIFO0
- 	then LinkFIFORdReq(0) <= '1'; 
-	else LinkFIFORdReq(0) <= '0'; 
-	end if;
-
- if (LinkRDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = LinkRdAddr(1))
--- Read of header words, read of data words
-   or Event_Builder = RdInWdCnt1 or Event_Builder = RdStat1 or Event_Builder = ReadFIFO1
-	then LinkFIFORdReq(1) <= '1'; 
-	else LinkFIFORdReq(1) <= '0'; 
-	end if;
-
- if (LinkRDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = LinkRdAddr(2))
--- Read of header words, read of data words
-   or Event_Builder = RdInWdCnt2 or Event_Builder = RdStat2 or Event_Builder = ReadFIFO2
-	then LinkFIFORdReq(2) <= '1'; 
-	else LinkFIFORdReq(2) <= '0'; 
-	end if;
-
- if Event_Builder = Idle then EvBuffWrtGate <= '0';
- elsif Event_Builder = WrtStat then EvBuffWrtGate <= '1';
- else EvBuffWrtGate <= EvBuffWrtGate;
- end if;
-
- if Event_Builder = WrtWdCnt or Event_Builder = WrtStat 
-	or (LinkFIFORdReq /= 0 and EvBuffWrtGate = '1')
-   then EventBuff_WrtEn <= '1'; --Debug(6) <= '1';
-  else EventBuff_WrtEn <= '0';  --Debug(6) <= '0';
- end if;
 
 
 
@@ -749,10 +578,7 @@ begin
 
 		-- SBND Internal Data Request Generator
 		-- Simplified from mu2e version by removing all fiber logic.
-		-- Requires Modified mode in uC code
-		-- (Now: Idle,SenduBunch0,SenduBunch1,SendHdr)
-		-- (Was: Idle,SendTrigHdr,SendPktType,SendPad0,SenduBunch0,SenduBunch1,
-		--		SenduBunch2,SendPad1,SendPad2,SendPad3,SendCRC)
+		-- unlike commented copy above, works with mu2e uC code
 		Case IntTrigSeq is
 			when Idle =>
 			  DreqSentCount <= x"0";
@@ -766,7 +592,7 @@ begin
 			  end if;
 			when Sleep =>
 				sleepTime := sleepTime + 1;
-				if sleepTime = 60000 then
+				if sleepTime = 150000 then
 					IntTrigSeq <= SendHdr;
 				else 
 					IntTrigSeq <= Sleep;
@@ -914,8 +740,10 @@ port map (
 
 -- Extract the eight payload bits from the 10 bit parallel data fron the deserializer
 -- Three lower bits from lane 1 and 5 bits from lane 0
+LinkFIFORdReq <= LinkFIFOuCRdReq or LinkFIFOEventBuilderRdReq;
+
 LinkBuff : LinkFIFO
-  port map (rst => LinkBuffRst, wr_clk => RxOutClk(i), rd_clk => SysClk, 
+  port map (rst => LinkBuffRst, wr_clk => RxOutClk(i), rd_clk => EthClk, 
     wr_en => LinkFIFOWrReq(i),rd_en => LinkFIFORdReq(i),
     din(15 downto 13) => LinkPDat(i)(1)(7 downto 5),
     din(12 downto 8) => LinkPDat(i)(0)(9 downto 5),
@@ -1061,9 +889,13 @@ ResetHi <= not CpldRst;  -- Generate and active high reset for the Xilinx macros
 
 
 -- State machine to read/write Ethernet
-EthProcess: process (ResetHi, EthClk) begin
+EthProcess: process (ResetHi, EthClk)
+variable EventWordCount : unsigned(15 downto 0);
+begin
   if (ResetHi='1') then
 		UserFPGAState <= USER_FPGA_DELAY_INIT;
+		EventWordCount := (others => '0');
+		EventReady <= '0';
 		Delay <= (others=>'0');
 		UserFPGASubState <= (others=>'0');
 		UserValidCount <= (others=>'0');
@@ -1071,9 +903,12 @@ EthProcess: process (ResetHi, EthClk) begin
 		InterruptStatus <= (others=>'0');
 		FrameLength <= (others=>'0');
 		Clean <= '0';
+		SplitEventIndex <= (others => '0');
 		RampData <= X"0001";
 		WriteCount <= (others=>'0');
 		EventLength <= (others=>'0');
+		
+		FIFOCount <= (others => (others => '0')); FIFOReadout <= (others => (others => '0')); 
   elsif (EthClk'event and EthClk='1') then
 		-- Counter of completed register reads
 		if (UserReadDataValid='1') then
@@ -1084,9 +919,13 @@ EthProcess: process (ResetHi, EthClk) begin
 		EthRDDL(0) <= not uCRD and not CpldCS;
 		EthRDDL(1) <= EthRDDL(0);
 
+		--LinkFIFOEventBuilderRdReq <= (others => '0'); --Set all read reqs to 0 at beginning of process. Sometimes they are overwritten later in the process to turn the read on.
+		uBunchBuffRd_en <= '0'; --set off unless turned on later
+		TStmpBuff_rd_en <= '0';
+
 		case UserFPGAState is
 			 -- Power on startup delay until GigExpedite reports a valid IP address
-			 when USER_FPGA_DELAY_INIT =>
+			 when USER_FPGA_DELAY_INIT => EthStatReg <= x"0";
 				  if (Delay=X"ffffff") then
 						if (UserReadDataValid='1' and UserReadData/=X"0000" and UserReadData/=X"ffff") then
 							 UserValidCount <= (others=>'0');
@@ -1097,8 +936,19 @@ EthProcess: process (ResetHi, EthClk) begin
 				  end if;
 			 
 			 -- Check if the connection state has changed
-			 when USER_FPGA_CHECK_STATE =>
-				  UserFPGASubState <= UserFPGASubState + 1;
+			 when USER_FPGA_CHECK_STATE => EthStatReg <= x"1";
+					FIFOReadout <= (others => (others => '0')); 
+					UserFPGASubState <= UserFPGASubState + 1;
+					if (LinkFIFOEmpty /= 7 and FormHold = '0' and TStmpBuff_Emtpy = '0') and ((LinkFIFOOut(0)(14 downto 0) <= LinkFIFORdCnt(0) and LinkFIFOEmpty(0) = '0') or ActiveReg(7 downto 0) = 0)
+						and ((LinkFIFOOut(1)(14 downto 0) <= LinkFIFORdCnt(1) and LinkFIFOEmpty(1) = '0') or ActiveReg(15 downto 8) = 0)
+						and ((LinkFIFOOut(2)(14 downto 0) <= LinkFIFORdCnt(2) and LinkFIFOEmpty(2) = '0') or ActiveReg(23 downto 16) = 0) 
+					then
+						EventReady <= '1';
+					else
+						EventReady <= '0';
+					end if;
+
+				  
 				  if (UserReadDataValid='1' and UserValidCount=X"0000") then
 						-- Store the interrupt status bits
 						InterruptStatus <= UserReadData;
@@ -1117,9 +967,9 @@ EthProcess: process (ResetHi, EthClk) begin
 			 
 			 -- Check if there is space in the outgoing GigExpedite buffer
 			 -- and we have data to send back to the host
-			 when USER_FPGA_CHECK_SPACE =>
+			 when USER_FPGA_CHECK_SPACE => EthStatReg <= x"2";
 				  UserFPGASubState <= UserFPGASubState + 1;
-				  if (EventBuff_Out >= EvBuffWrdsUsed or EthSendHold = '1' or
+				  if (EventReady = '0' or EthSendHold = '1' or
 						ConnectionState(3 downto 0)/=ESTABLISHED or
 						InterruptStatus(2)='0') then
 						-- not a full event in event buffer
@@ -1129,27 +979,143 @@ EthProcess: process (ResetHi, EthClk) begin
 						UserValidCount <= (others=>'0');
 						UserFPGAState <= USER_FPGA_CHECK_STATE;
 				  else
+						EventWordCount := to_unsigned(7,16);
 						-- OK to write data to GigExpedite FIFO
+						if ActiveReg(7 downto 0) /= 0 then 
+							EventWordCount := EventWordCount + Unsigned(LinkFIFOOut(0)(14 downto 0));
+							FifoCount(0) <= "0" & LinkFIFOOut(0)(14 downto 0);
+						else
+							FifoCount(0) <= (others => '0');
+						end if;
+						if ActiveReg(15 downto 8) /= 0 then 
+							EventWordCount := EventWordCount + Unsigned(LinkFIFOOut(1)(14 downto 0));
+							FifoCount(1) <= "0" & LinkFIFOOut(1)(14 downto 0);
+						else
+							FifoCount(1) <= (others => '0');
+						end if;
+						if ActiveReg(23 downto 16) /= 0 then 
+							EventWordCount := EventWordCount + Unsigned(LinkFIFOOut(2)(14 downto 0));
+							FifoCount(2) <= "0" & LinkFIFOOut(2)(14 downto 0);
+						else
+							FifoCount(2) <= (others => '0');
+						end if;
+						
+						UserFPGASubState <= (others=>'0');
+						UserValidCount <= (others=>'0');
+						if EventWordCount > 7 then
+							EventBuildData <= std_logic_vector(EventWordCount);
+							UserFPGAState <= USER_FPGA_WRITE_HEADER;
+							UserFPGASubState <= (others=>'0');
+							UserValidCount <= (others=>'0');
+
+						else
+							UserFPGAState <= USER_FPGA_CHECK_STATE;
+						end if;
+						EventLength <= std_logic_vector(EventWordCount);
+				  end if;
+
+			 when USER_FPGA_WRITE_HEADER => EthStatReg <= x"3";
+				  UserFPGASubState <= UserFPGASubState + 1;
+				  WriteCount <= WriteCount + 1;
+				  if UserFPGASubState = 0 then
+						EventBuildData <= uBunchBuffOut (47 downto 32);
+						SplitEventIndex <= SplitEventIndex + 1;
+				  elsif UserFPGASubState = 1 then
+						EventBuildData <= uBunchBuffOut (31 downto 16);
+
+				  elsif UserFPGASubState = 2 then
+						EventBuildData <= std_logic_vector(unsigned(uBunchBuffOut (15 downto 0)) + SplitEventIndex - 2);
+						if SplitEventIndex = 5 then
+							uBunchBuffRd_en <= '1';
+						end if;
+						
+				  elsif UserFPGASubState = 3 then
+						EventBuildData <= TStmpBuff_Out(31 downto 16);
+
+				  elsif UserFPGASubState = 4 then
+						EventBuildData <= TStmpBuff_Out(15 downto 0);
+						if SplitEventIndex = 5 then
+							TStmpBuff_rd_en <= '1';
+							SplitEventIndex <= to_unsigned(1,5);
+						end if;
+				  elsif UserFPGASubState = 5 then
+						EventBuildData <= x"DA22";
+				  elsif UserFPGASubState = 6 then
+						EventBuildData <= x"0526";
 						UserFPGASubState <= (others=>'0');
 						UserValidCount <= (others=>'0');
 						UserFPGAState <= USER_FPGA_WRITE_DATA;
-						EventLength <= EventBuff_Out;
+
 				  end if;
 
-			 -- Write 1kbyte of data to outgoing FIFO
-			 when USER_FPGA_WRITE_DATA =>
+
+			 -- Write up to 32k words of data to outgoing FIFO
+			 when USER_FPGA_WRITE_DATA => EthStatReg <= x"4";
 				  UserFPGASubState <= UserFPGASubState + 1;
 				  WriteCount <= WriteCount + 1;
-				  if (WriteCount = EventLength+1) or (EventLength = 0) or  (UserFPGASubState=X"0fff") -- I don't understand why it's EventLength+1 and not EventLength-1
+				  if FIFOCount(0) > FIFOReadout(0) then
+						EventBuildData <= LinkFIFOOut(0);
+						FIFOReadout(0) <= FIFOReadout(0) + 1;
+						--LinkFIFOEventBuilderRdReq(0) <= '1'; 
+
+				  elsif FIFOCount(1) > FIFOReadout(1) then
+						EventBuildData <= LinkFIFOOut(1);
+						FIFOReadout(1) <= FIFOReadout(1) + 1;
+						--LinkFIFOEventBuilderRdReq(1) <= '1'; 
+
+				  elsif FIFOCount(2) > FIFOReadout(2) then
+						EventBuildData <= LinkFIFOOut(2);
+						FIFOReadout(2) <= FIFOReadout(2) + 1;
+						--LinkFIFOEventBuilderRdReq(2) <= '1'; 
+
+				  else
+						EventBuildData <= x"1239";
+				  end if;
+				  
+				  if (WriteCount = EventLength-1) or (EventLength = 0) or  (UserFPGASubState=X"D000") 
 					then
 						UserFPGASubState <= (others=>'0');
 						UserValidCount <= (others=>'0');
 						UserFPGAState <= USER_FPGA_CHECK_STATE;
+					elsif (WriteCount = x"7FF0") then
+						UserFPGAState <= USER_FPGA_CHECK_NOT_FULL;
 				  end if;
+				  
+				  
+			 when USER_FPGA_CHECK_NOT_FULL => EthStatReg <= x"5";
+				  if (UserReadDataValid='1') then
+						-- check the interrupt status bits
+						if UserReadData(2) = '1' then
+							UserFPGAState <= USER_FPGA_WRITE_DATA;
+						else
+							UserFPGAState <= USER_FPGA_CHECK_NOT_FULL; -- stay and wait;
+						end if;
+				  end if;
+
 
 			 when others => null;
 		end case;
-		
+
+-- Link FIFO reads
+-- Microcontroller read
+   if (LinkRDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = LinkRdAddr(0))
+-- Read of header words, read of data words
+ 	then LinkFIFOuCRdReq(0) <= '1'; 
+	else LinkFIFOuCRdReq(0) <= '0'; 
+	end if;
+
+ if (LinkRDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = LinkRdAddr(1))
+-- Read of header words, read of data words
+	then LinkFIFOuCRdReq(1) <= '1'; 
+	else LinkFIFOuCRdReq(1) <= '0'; 
+	end if;
+
+ if (LinkRDDL = 2 and AddrReg(11 downto 10) = GA and AddrReg(9 downto 0) = LinkRdAddr(2))
+-- Read of header words, read of data words
+	then LinkFIFOuCRdReq(2) <= '1'; 
+	else LinkFIFOuCRdReq(2) <= '0'; 
+	end if;
+
 		
 
   end if;
@@ -1157,7 +1123,7 @@ end process;
 
 -- Map states to Ethernet register accesses
 process (UserFPGAState, Delay, UserFPGASubState, UserReadDataValid, UserReadData,
-		 UserValidCount, ConnectionState, FrameLength, EventBuff_Out, EthRDDL) begin
+		 UserValidCount, ConnectionState, FrameLength, EventBuff_Out, EthRDDL, EventBuildData, FIFOCount, FIFOReadout) begin
 
 --This seems hacky, but I don't know a better way
 --Reads out event buff on eth read or uc read, but without delay after going to write data.
@@ -1169,6 +1135,7 @@ process (UserFPGAState, Delay, UserFPGASubState, UserReadDataValid, UserReadData
 	else
 		EventBuff_RdEn <= '0';
 	end if;
+	LinkFIFOEventBuilderRdReq <=  "000"; 
 
   case UserFPGAState is
 		when USER_FPGA_DELAY_INIT =>
@@ -1211,6 +1178,14 @@ process (UserFPGAState, Delay, UserFPGASubState, UserReadDataValid, UserReadData
 			 else
 				  UserWriteData <= (CONN_TCP or CONN_ENABLE or LISTEN);
 			 end if;
+			 
+		when USER_FPGA_CHECK_NOT_FULL =>
+			 UserRE <= '1';
+			 UserAddr <= '0' & X"0" & INTERRUPT_ENABLE_STATUS;
+			 UserWE <= '0';
+			 UserBE <= "11";
+			 UserWriteData <= (others=>'0');
+
 
 		when USER_FPGA_CHECK_SPACE =>
 			 -- No access necessary
@@ -1219,14 +1194,36 @@ process (UserFPGAState, Delay, UserFPGASubState, UserReadDataValid, UserReadData
 			 UserBE <= "11";
 			 UserAddr <= (others=>'0');
 			 UserWriteData <= (others=>'0');
+		
+		when USER_FPGA_WRITE_HEADER =>
+			 -- Write data to connection FIFO
+			 UserRE <= '0';
+			 UserWE <= '1';
+			 UserBE <= "11";
+			 UserAddr <= '0' & X"0" & DATA_FIFO;
+			 UserWriteData <= EventBuildData;
+
 			 
+		
 		when USER_FPGA_WRITE_DATA =>
 			 -- Write data to connection FIFO
 			 UserRE <= '0';
 			 UserWE <= '1';
 			 UserBE <= "11";
 			 UserAddr <= '0' & X"0" & DATA_FIFO;
-			 UserWriteData <= EventBuff_Out;
+			 if FIFOCount(0)> FIFOReadout(0) then
+					LinkFIFOEventBuilderRdReq(0) <= '1'; 
+
+			  elsif FIFOCount(1) > FIFOReadout(1)  then
+					LinkFIFOEventBuilderRdReq(1) <= '1'; 
+
+			  elsif FIFOCount(2) > FIFOReadout(2) then
+					LinkFIFOEventBuilderRdReq(2) <= '1'; 
+			  else
+					LinkFIFOEventBuilderRdReq <=  "000"; 
+			  end if;
+			 UserWriteData <= EventBuildData;
+
 			 
 		when others =>
 			 -- Don't do anything
@@ -1261,9 +1258,7 @@ begin
 		FMWRDL <= "00";
 		
 		TStmpBuff_wr_en <= '0';
-		TStmpBuff_rd_en <= '0';
 		uBunchBuffWr_en <= '0';
-		uBunchBuffRd_en <= '0';
 		Trig_Tx_Req <= '0';
 
 
@@ -1753,7 +1748,7 @@ iCD <= X"0" & '0' & '0' & '0' & '0' & '0' & '0'
 		 X"00" & ActiveReg(23 downto 16) when ActvRegAddrHi,
 		 ActiveReg(15 downto 0) when ActvRegAddrLo,
 		 X"000" & IDReg when IDregAddr,
-		 X"0" & "00" & Debug when DebugPinAd,
+		 EthStatReg  & "00" & Debug when DebugPinAd,
 		 UpTimeStage(31 downto 16) when UpTimeRegAddrHi,
 		 UpTimeStage(15 downto 0) when UpTimeRegAddrLo,
 		 TestCount(31 downto 16) when TestCounterHiAd,

@@ -49,14 +49,16 @@ ARCHITECTURE behavior OF Controller_FPGA1_tb IS
 
  COMPONENT ControllerFPGA_1
  PORT
-	(-- 159.3 MHz VXO clock, 50MHz Phy clock
+(
+-- 100 MHz VXO clock, 50MHz Phy clock
 	VXO_P,VXO_N,ClkB_P,ClkB_N,Clk50MHz,BnchClk : in std_logic;
 -- 156.25 MHz GTP Reference clock, Gigabit data lines
 	GTPClk_P,GTPClk_N,GTPRx_P,GTPRx_N : in std_logic_vector(1 downto 0);
 	GTPTx_P,GTPTx_N : out std_logic_vector(1 downto 0);
 -- Optical transcever slow control lines
 	TDisA,TDisB : buffer std_logic;
---	SCLA,SDAA,SCLB,SDAB : inout std_logic;
+-- The partucular optical transceivers we bought don't come with I2C control
+-- thses lines don't go anywhere for now.
 	SD_A,SD_B : in std_logic;
 -- microcontroller strobes
 	CpldRst, CpldCS, uCRd, uCWr, EthCS : in std_logic;
@@ -70,28 +72,28 @@ ARCHITECTURE behavior OF Controller_FPGA1_tb IS
 -- Serial inter-chip link Data lines
 	LinkSDat_P,LinkSDat_N : in std_logic_vector(5 downto 0);
 -- FM Transmitters for uBunch and Triggers
-	HeartBeatFM,TrigFM,uBunchLED,TrigLED : buffer std_logic;
+	HeartBeatFM,TrigFM,uBunchLED,TrigLED,
 -- Pll control lines
 	PllSClk,PllSDat,PllLd,PllPDn : buffer std_logic;
 	PllStat : in std_logic;
 -- Serial control lines for the RJ-45 LEDs
 	LEDSClk,LEDSDat : out std_logic_vector(2 downto 0);
 	LEDLd : out std_logic_vector(5 downto 0);
-	LEDRst : out std_logic;
+	LEDRst : buffer std_logic;
 -- Orange Tree Ethernet daughter card lines
-	DQ : inout std_logic_vector(15 downto 0);
-	ZEthA : buffer std_logic_vector(8 downto 0);
-	ZEthCS,ZEthWE,ZEthClk : buffer std_logic;
-	ZEthBE : buffer std_logic_vector(1 downto 0);
-	ZEthEOF : in std_logic_vector(1 downto 0);
-	ZEthLen : in std_logic;
+	GigEx_Data : inout std_logic_vector(15 downto 0);
+	GigEx_Addr : out std_logic_vector(8 downto 0);
+	GigEx_nCS,GigEx_nWE,GigEx_Clk : out std_logic;
+	GigEx_nBE : out std_logic_vector(1 downto 0);
+	GigEx_EOF : in std_logic_vector(1 downto 0);
+	GigEx_Length : in std_logic;
 -- Back panel LEMOs
 	GPO : buffer std_logic_vector(1 downto 0);
 	GPI,NimTrig : in std_logic;
 -- Debug port
-	Debug : buffer std_logic_vector(10 downto 1));
-	
- END COMPONENT;
+	Debug : buffer std_logic_vector(10 downto 1) 
+);	
+END COMPONENT;
 
 signal VXO_P,VXO_N,ClkB_P,ClkB_N,Clk50MHz,BnchClk : std_logic;
 signal GTPClk_P,GTPClk_N,GTPRx_P,GTPRx_N : std_logic_vector(1 downto 0);
@@ -2295,10 +2297,10 @@ uut: ControllerFPGA_1
 	PllPDn => PllPDn, PllStat => PllStat,
 	LEDSClk => LEDSClk,LEDSDat => LEDSDat,
 	LEDLd => LEDLd, LEDRst => LEDRst,
-	DQ => DQ, ZEthA => ZEthA, ZEthCS => ZEthCS,
-	ZEthWE => ZEthWE,ZEthClk => ZEthClk,
-	ZEthBE => ZEthBE,	ZEthEOF => ZEthEOF,
-	ZEthLen => ZEthLen, GPO => GPO,
+	GigEx_Data => DQ, GigEx_Addr => ZEthA, GigEx_nCS => ZEthCS,
+	GigEx_nWE => ZEthWE,GigEx_Clk => ZEthClk,
+	GigEx_nBE => ZEthBE,	GigEx_EOF => ZEthEOF,
+	GigEx_Length => ZEthLen, GPO => GPO,
 	GPI => GPI,NimTrig => NimTrig,
 	-- PeriodicMicrobunch => PeriodicMicrobunch, IntTmgEn => IntTmgEn,
 	Debug => Debug);
